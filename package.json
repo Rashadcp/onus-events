@@ -1,0 +1,16 @@
+{
+  "name": "onus-event",
+  "version": "1.0.0",
+  "description": "Onus Event - Modular Event & Inventory Management System",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "server:dev": "npm run dev --workspace=packages/server",
+    "server:build": "npm run build --workspace=packages/server",
+    "web:dev": "npm run dev --workspace=packages/web",
+    "web:build": "npm run build --workspace=packages/web",
+    "mobile:start": "npm start --workspace=packages/mobile"
+  }
+}

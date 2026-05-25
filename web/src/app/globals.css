@@ -1,0 +1,167 @@
+@import "tailwindcss";
+
+:root {
+  /* Premium Light-Theme Color Tokens */
+  --bg-main: #F8FAFC;           /* Clean Slate Grey */
+  --bg-card: #FFFFFF;           /* Crisp White Card */
+  --border-card: #E2E8F0;       /* Soft Slate Border */
+  
+  --color-primary: #2563EB;     /* Royal Blue */
+  --color-secondary: #0F172A;   /* Deep Slate Blue */
+  --color-accent: #14B8A6;      /* Vibrant Teal Accent */
+  
+  --color-text-main: #1E293B;   /* Slate 800 Dark Text */
+  --color-text-sub: #64748B;    /* Slate 500 Muted Text */
+  
+  --color-success: #22C55E;     /* Emerald Green */
+  --color-warning: #F59E0B;     /* Amber */
+  --color-danger: #EF4444;      /* Rose Red */
+}
+
+body {
+  background: var(--bg-main);
+  color: var(--color-text-main);
+  font-family: 'Outfit', 'Inter', sans-serif;
+  overflow-x: hidden;
+  margin: 0;
+}
+
+/* Beautiful soft background glows */
+.radial-glow {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(140px);
+  z-index: 0;
+  opacity: 0.08;
+  pointer-events: none;
+}
+
+/* Clean industrial-grade card layout panels (No animations or hover-transitions) */
+.glass-panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  border-radius: 16px;
+  box-shadow: 0 2px 8px 0 rgba(15, 23, 42, 0.04), 0 1px 2px 0 rgba(15, 23, 42, 0.02);
+}
+
+.glass-panel:hover {
+  border-color: rgba(37, 99, 235, 0.15);
+}
+
+/* Custom premium input fields (Static, instantaneous responsiveness) */
+.glow-input {
+  background: #FFFFFF;
+  border: 1px solid var(--border-card);
+  color: var(--color-text-main);
+  border-radius: 8px;
+  padding: 12px 16px;
+  outline: none;
+  font-size: 0.95rem;
+}
+
+.glow-input:focus {
+  border-color: var(--color-primary);
+  background: #FFFFFF;
+}
+
+/* Solid ERP primary action buttons (No translations or hover-scaling) */
+.btn-glow {
+  background: linear-gradient(135deg, var(--color-primary) 0%, #1d4ed8 100%);
+  color: #FFFFFF;
+  border-radius: 8px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  cursor: pointer;
+  border: none;
+  padding: 12px 24px;
+}
+
+.btn-glow:active {
+  transform: none;
+}
+
+/* 
+ * Enterprise Animation Disable Overrides 
+ * Instantly loads all viewports, sheets, popups, and listings with 0ms delay.
+ */
+
+/* Spin is highly useful to display backend query loading states */
+.animate-spin {
+  animation: spin 1s linear infinite !important;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+
+
+/* Custom premium scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-main);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-card);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-primary);
+}
+
+/* Deactivate hover scaling transformations for solid datagrid performance */
+.hover-scale {
+  transition: none !important;
+}
+.hover-scale:hover {
+  transform: none !important;
+}
+
+.glow-card {
+  transition: none !important;
+}
+.glow-card:hover {
+  border-color: rgba(37, 99, 235, 0.18) !important;
+  box-shadow: none !important;
+}
+
+/* Gorgeous Dashboard Welcome Banners (Stripped of transition and scaling styles) */
+.banner-gradient-admin {
+  background: linear-gradient(135deg, #2563EB 0%, #1e4ed8 55%, #14B8A6 100%);
+  position: relative;
+  overflow: hidden;
+}
+.banner-gradient-rep {
+  background: linear-gradient(135deg, #14B8A6 0%, #0d9488 55%, #2563EB 100%);
+  position: relative;
+  overflow: hidden;
+}
+
+.banner-pattern {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  opacity: 0.06;
+  background-image: radial-gradient(circle at 1px 1px, white 1px, transparent 0);
+  background-size: 16px 16px;
+  pointer-events: none;
+}
+
+/* 
+ * ERP Global Layout Stabilization:
+ * Completely disables custom hover scaling, transformations, and transition delays globally.
+ * Ensures the UI behaves instantly and crisply under heavy enterprise data grids.
+ */
+*:hover {
+  transform: none !important;
+  transition: none !important;
+}
