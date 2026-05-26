@@ -3,6 +3,10 @@ import { z } from 'zod';
 import mongoose from 'mongoose';
 import LogisticsLog from '../../models/LogisticsLog';
 import Event from '../../models/Event';
+import { 
+  dispatchEventReservations, 
+  returnEventReservations 
+} from '../../services/reservationEngine';
 
 // Logistics Validation Schema
 const LogisticsUpdateSchema = z.object({
@@ -56,7 +60,7 @@ export async function getLogisticsLog(req: Request, res: Response) {
       .populate('verifiedOut.itemId')
       .populate('shortItems.itemId')
       .populate('missingItems.itemId')
-      .populate('modifiedBy.userId', 'fullName username');
+      .populate('modifiedBy.userId', 'name email phone');
 
     if (!log) {
       // Return a blank template if not initialized yet
@@ -87,40 +91,63 @@ export async function getLogisticsLog(req: Request, res: Response) {
  * Incorporates complete audit trail logging if modified.
  */
 export async function updateLogisticsLog(req: Request, res: Response) {
+  const session = await mongoose.startSession();
+  session.startTransaction();
   try {
     const { eventId } = req.params;
     const validated = LogisticsUpdateSchema.parse(req.body);
     const userId = req.user?.userId;
 
     if (!userId) {
+      await session.abortTransaction();
+      session.endSession();
       return res.status(401).json({ error: 'Unauthorized user session context.' });
     }
 
     // Verify event exists
     const eventExists = await Event.findOne({ _id: eventId, isDeleted: false });
     if (!eventExists) {
+      await session.abortTransaction();
+      session.endSession();
       return res.status(404).json({ error: 'Associated active event not found.' });
     }
 
     let log = await LogisticsLog.findOne({ eventId });
 
+    // Transition reservation statuses based on logistics workflow
+    if (validated.status) {
+      if (validated.status === 'LOADING_OUT') {
+        await dispatchEventReservations(eventId, session);
+      } else if (validated.status === 'COMPLETED') {
+        await returnEventReservations(eventId, session);
+      }
+    }
+
     if (!log) {
       // First-time initialization
-      log = await LogisticsLog.create({
-        eventId: new mongoose.Types.ObjectId(eventId),
-        ...validated,
-        modifiedBy: [
+      const logsCreated = await LogisticsLog.create(
+        [
           {
-            userId: new mongoose.Types.ObjectId(userId),
-            modifiedAt: new Date(),
-            changeDetails: 'Initial logistics log sheet created.'
+            eventId: new mongoose.Types.ObjectId(eventId),
+            ...validated,
+            modifiedBy: [
+              {
+                userId: new mongoose.Types.ObjectId(userId),
+                modifiedAt: new Date(),
+                changeDetails: 'Initial logistics log sheet created.'
+              }
+            ]
           }
-        ]
-      });
+        ],
+        { session }
+      );
+
+      await session.commitTransaction();
+      session.endSession();
 
       return res.status(201).json({
         message: 'Logistics log created successfully.',
-        log
+        log: logsCreated[0]
       });
     }
 
@@ -161,14 +188,19 @@ export async function updateLogisticsLog(req: Request, res: Response) {
         $set: updatePayload,
         $push: { modifiedBy: auditRecord }
       },
-      { new: true }
+      { new: true, session }
     );
+
+    await session.commitTransaction();
+    session.endSession();
 
     return res.status(200).json({
       message: 'Logistics log updated and modification audited successfully.',
       log: updatedLog
     });
   } catch (error: any) {
+    await session.abortTransaction();
+    session.endSession();
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: error.errors[0].message });
     }

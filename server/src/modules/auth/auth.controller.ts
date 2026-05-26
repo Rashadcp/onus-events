@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import mongoose from 'mongoose';
 import { z } from 'zod';
 import User from '../../models/User';
 import { 
@@ -6,30 +7,31 @@ import {
   comparePassword, 
   generateAccessToken, 
   generateRefreshToken, 
+  verifyAccessToken,
   verifyRefreshToken 
 } from '../../utils/authHelper';
 import { handleControllerError } from '../../utils/errorHelper';
 
 // Login Validation Schema
 const LoginSchema = z.object({
-  username: z.string().min(1, 'Username is required'),
+  email: z.string().min(1, 'Representative ID is required'),
   password: z.string().min(1, 'Password is required')
 });
 
 // User Registration Validation Schema
 const RegisterSchema = z.object({
-  username: z.string().min(3, 'Username must be at least 3 characters'),
+  name: z.string().min(1, 'Name is required'),
   email: z.string().email('Invalid email address'),
-  password: z.string().min(3, 'Password must be at least 3 characters'),
-  fullName: z.string().min(1, 'Full name is required'),
-  role: z.enum(['ADMIN', 'REPRESENTATIVE', 'LOADING_STAFF', 'SITE_INCHARGE'])
+  phone: z.string().min(5, 'Phone number must be at least 5 characters'),
+  password: z.string().min(6, 'Password must be at least 6 characters'),
+  role: z.enum(['ADMIN', 'SALES_REPRESENTATIVE', 'LOADING_STAFF', 'SITE_INCHARGE', 'CAPTAIN', 'STORE_KEEPER'])
 });
 
 const LOCK_TIME_MS = 30 * 60 * 1000; // 30 minutes lockout
 const MAX_ATTEMPTS = 5;
 
 /**
- * Handle user registration / seeding.
+ * Handle user registration.
  */
 export async function register(req: Request, res: Response) {
   try {
@@ -38,27 +40,38 @@ export async function register(req: Request, res: Response) {
     // Only let Admin create new accounts (or let the first user register as Admin if database is empty)
     const userCount = await User.countDocuments();
     if (userCount > 0) {
+      // If req.user is missing, try to parse Bearer token inline
+      if (!req.user) {
+        const authHeader = req.headers.authorization;
+        if (authHeader && authHeader.startsWith('Bearer ')) {
+          try {
+            const token = authHeader.split(' ')[1];
+            req.user = verifyAccessToken(token);
+          } catch (err) {
+            return res.status(401).json({ error: 'Unauthorized: Invalid access token' });
+          }
+        }
+      }
+
       // Access guard: verify requesting user is ADMIN
       if (!req.user || req.user.role !== 'ADMIN') {
         return res.status(403).json({ error: 'Forbidden: Only administrators can create new users.' });
       }
     }
 
-    const existingUser = await User.findOne({
-      $or: [{ username: validated.username }, { email: validated.email }]
-    });
+    const existingUser = await User.findOne({ email: validated.email });
 
     if (existingUser) {
-      return res.status(409).json({ error: 'Username or email already exists' });
+      return res.status(409).json({ error: 'Email already exists' });
     }
 
     const passwordHash = await hashPassword(validated.password);
     const newUser = await User.create({
-      username: validated.username,
+      name: validated.name,
       email: validated.email,
-      passwordHash,
+      phone: validated.phone,
+      password: passwordHash,
       role: validated.role,
-      fullName: validated.fullName,
       isActive: true
     });
 
@@ -66,9 +79,10 @@ export async function register(req: Request, res: Response) {
       message: 'User registered successfully',
       user: {
         id: newUser._id,
-        username: newUser.username,
-        role: newUser.role,
-        fullName: newUser.fullName
+        name: newUser.name,
+        email: newUser.email,
+        phone: newUser.phone,
+        role: newUser.role
       }
     });
   } catch (error: any) {
@@ -82,19 +96,24 @@ export async function register(req: Request, res: Response) {
 export async function login(req: Request, res: Response) {
   try {
     const validated = LoginSchema.parse(req.body);
-    const { username, password } = validated;
+    const { email, password } = validated;
+    const loginId = email.trim().toLowerCase();
 
-    // Search user by username or email
-    const user = await User.findOne({
-      $or: [
-        { username: username.toLowerCase() },
-        { email: username.toLowerCase() }
-      ]
-    });
+    const lookupConditions: any[] = [
+      { email: loginId },
+      { phone: email.trim() }
+    ];
+
+    if (mongoose.Types.ObjectId.isValid(email.trim())) {
+      lookupConditions.push({ _id: email.trim() });
+    }
+
+    // Search user by email, phone, or database ID shown as Representative ID.
+    const user = await User.findOne({ $or: lookupConditions });
 
     if (!user) {
       // Maintain generic error message to prevent username enumeration exploits
-      return res.status(401).json({ error: 'Invalid username or password' });
+      return res.status(401).json({ error: 'Invalid email or password' });
     }
 
     if (!user.isActive) {
@@ -109,14 +128,19 @@ export async function login(req: Request, res: Response) {
       });
     }
 
-    // Compare input password with hashed password
-    const isMatch = await comparePassword(password, user.passwordHash);
+    // Compare input password with hashed password (with legacy fallback support)
+    const storedHash = user.password || (user as any).passwordHash;
+    if (!storedHash) {
+      return res.status(401).json({ error: 'Account database format mismatch. Please restart the backend server.' });
+    }
+
+    const isMatch = await comparePassword(password, storedHash);
 
     if (!isMatch) {
       // Password mismatch: Increment failed attempts counter
       user.failedLoginAttempts += 1;
       
-      let lockMessage = 'Invalid username or password.';
+      let lockMessage = 'Invalid email or password.';
       
       if (user.failedLoginAttempts >= MAX_ATTEMPTS) {
         user.lockUntil = new Date(Date.now() + LOCK_TIME_MS);
@@ -155,9 +179,10 @@ export async function login(req: Request, res: Response) {
       accessToken,
       user: {
         id: user._id,
-        username: user.username,
-        role: user.role,
-        fullName: user.fullName
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        role: user.role
       }
     });
   } catch (error: any) {
@@ -215,6 +240,42 @@ export async function logout(req: Request, res: Response) {
       sameSite: 'strict'
     });
     return res.status(200).json({ message: 'Logged out successfully' });
+  } catch (error: any) {
+    return handleControllerError(res, error);
+  }
+}
+
+/**
+ * Handle password changes.
+ */
+export async function changePassword(req: Request, res: Response) {
+  try {
+    const ChangePasswordSchema = z.object({
+      oldPassword: z.string().min(1, 'Old password is required'),
+      newPassword: z.string().min(6, 'New password must be at least 6 characters')
+    });
+
+    const validated = ChangePasswordSchema.parse(req.body);
+    const userId = req.user?.userId;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized user session context.' });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const isMatch = await comparePassword(validated.oldPassword, user.password);
+    if (!isMatch) {
+      return res.status(400).json({ error: 'Invalid current password' });
+    }
+
+    user.password = await hashPassword(validated.newPassword);
+    await user.save();
+
+    return res.status(200).json({ message: 'Password changed successfully' });
   } catch (error: any) {
     return handleControllerError(res, error);
   }

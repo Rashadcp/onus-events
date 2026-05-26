@@ -8,6 +8,7 @@ import { SectionHeader } from '../ui/SectionHeader';
 import { Alert } from '../ui/Alert';
 import { Item } from '../../types';
 import { getInventoryApi } from '../../services/api';
+import { apiClient } from '../../utils/apiClient';
 
 interface FreeStockMonitorProps {
   initialItems?: Item[];
@@ -17,6 +18,8 @@ export function FreeStockMonitor({ initialItems = [] }: FreeStockMonitorProps) {
   const [freeStockStart, setFreeStockStart] = useState('');
   const [freeStockEnd, setFreeStockEnd] = useState('');
   const [message, setMessage] = useState<string | null>(null);
+  const [availabilityMap, setAvailabilityMap] = useState<Record<string, number>>({});
+  const [isQuerying, setIsQuerying] = useState(false);
 
   // TanStack Query for Inventory
   const { data: inventoryData = [] } = useQuery<Item[]>({
@@ -27,15 +30,41 @@ export function FreeStockMonitor({ initialItems = [] }: FreeStockMonitorProps) {
 
   const activeItems = inventoryData.length > 0 ? inventoryData : initialItems;
 
-  const handleQueryStock = () => {
+  const handleQueryStock = async () => {
     if (!freeStockStart || !freeStockEnd) {
       setMessage('Please select both start and end date/time to query free stock.');
       return;
     }
-    setMessage(`Available stock levels calculated successfully for window: ${new Date(freeStockStart).toLocaleString()} to ${new Date(freeStockEnd).toLocaleString()}`);
+
+    setIsQuerying(true);
+    setMessage(null);
+
+    try {
+      const map: Record<string, number> = {};
+      const startIso = new Date(freeStockStart).toISOString();
+      const endIso = new Date(freeStockEnd).toISOString();
+
+      await Promise.all(
+        activeItems.map(async (item: any) => {
+          try {
+            const res = await apiClient.get(`/api/inventory/${item._id}/availability?startDate=${startIso}&endDate=${endIso}`);
+            map[item._id] = res.data.availableQty;
+          } catch (err) {
+            map[item._id] = item.currentStock;
+          }
+        })
+      );
+
+      setAvailabilityMap(map);
+      setMessage(`Available stock levels calculated successfully for window: ${new Date(freeStockStart).toLocaleString()} to ${new Date(freeStockEnd).toLocaleString()}`);
+    } catch (e) {
+      setMessage('Failed to query stock availability. Displaying current total warehouse reserves.');
+    } finally {
+      setIsQuerying(false);
+    }
   };
 
-  const departments = ['COUNTER_DECOR', 'CLOTH_DECOR', 'RENTAL_ITEMS', 'STAFF'];
+  const departments = ['COUNTER_DECOR', 'CLOTH_DECOR', 'RENTAL_ITEMS', 'EXPENSE_CHARGES', 'STAFF', 'OUTSIDE_RENTAL'];
 
   return (
     <div className="flex flex-col gap-8">
@@ -68,9 +97,9 @@ export function FreeStockMonitor({ initialItems = [] }: FreeStockMonitorProps) {
             onChange={(e) => setFreeStockEnd(e.target.value)}
           />
         </div>
-        <Button onClick={handleQueryStock}>
+         <Button onClick={handleQueryStock} loading={isQuerying}>
           Query Available Stock
-        </Button>
+         </Button>
       </Card>
 
       {/* Available Stocks by Department */}
@@ -82,14 +111,20 @@ export function FreeStockMonitor({ initialItems = [] }: FreeStockMonitorProps) {
             </h3>
             
             <div className="flex flex-col gap-3">
-              {activeItems.filter((item: Item) => item.department === dept).map((item: Item) => (
-                <div key={item.itemCode} className="flex justify-between items-center text-xs">
-                  <span className="text-slate-700 font-semibold">{item.name}</span>
-                  <span className="px-2 py-0.5 bg-slate-50 border border-[#E2E8F0] text-emerald-600 font-bold rounded">
-                    {item.currentStock} Free
-                  </span>
-                </div>
-              ))}
+              {activeItems.filter((item: Item) => item.department === dept).map((item: any) => {
+                const availableQty = availabilityMap[item._id] !== undefined 
+                  ? availabilityMap[item._id] 
+                  : (availabilityMap[item.itemCode] !== undefined ? availabilityMap[item.itemCode] : item.currentStock);
+
+                return (
+                  <div key={item.itemCode} className="flex justify-between items-center text-xs">
+                    <span className="text-slate-700 font-semibold">{item.name}</span>
+                    <span className="px-2 py-0.5 bg-slate-50 border border-[#E2E8F0] text-emerald-600 font-bold rounded">
+                      {availableQty} Free
+                    </span>
+                  </div>
+                );
+              })}
               {activeItems.filter((item: Item) => item.department === dept).length === 0 && (
                 <p className="text-xs text-slate-400 italic">No items matching this department in catalog.</p>
               )}

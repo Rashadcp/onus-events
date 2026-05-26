@@ -7,7 +7,7 @@ import { Button } from '../ui/Button';
 import { Alert } from '../ui/Alert';
 import { SectionHeader } from '../ui/SectionHeader';
 import { Modal } from '../ui/Modal';
-import axios from 'axios';
+import { apiClient } from '../../utils/apiClient';
 
 interface PastEventsLogsProps {
   initialEvents?: any[];
@@ -24,9 +24,7 @@ export function PastEventsLogs({ initialEvents = [] }: PastEventsLogsProps) {
   const { data: eventsData = [] } = useQuery({
     queryKey: ['events'],
     queryFn: async () => {
-      const res = await axios.get('http://localhost:5000/api/events', {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('accessToken')}` }
-      });
+      const res = await apiClient.get('/api/events');
       return res.data;
     },
     placeholderData: initialEvents
@@ -37,11 +35,7 @@ export function PastEventsLogs({ initialEvents = [] }: PastEventsLogsProps) {
   // Recover mutation
   const recoverEventMutation = useMutation({
     mutationFn: async (id: string) => {
-      const res = await axios.post(`http://localhost:5000/api/events/${id}/recover`, {}, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
-        }
-      });
+      const res = await apiClient.post(`/api/events/${id}/recover`);
       return res.data;
     },
     onSuccess: () => {

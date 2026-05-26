@@ -11,6 +11,16 @@ export interface IDepartmentConfirmation {
   confirmedAt?: Date;
 }
 
+export type EventStatus = 
+  | 'INQUIRY'
+  | 'QUOTATION'
+  | 'APPROVED'
+  | 'CONFIRMED'
+  | 'LOADING'
+  | 'DISPATCHED'
+  | 'RETURNED'
+  | 'CLOSED';
+
 export interface IEvent extends Document {
   customerName: string;
   eventDate: {
@@ -23,6 +33,7 @@ export interface IEvent extends Document {
   };
   place: string;
   program: string;
+  eventStatus: EventStatus;
   createdBy: mongoose.Types.ObjectId;
   isDeleted: boolean;
   deletedBy?: mongoose.Types.ObjectId;
@@ -64,6 +75,11 @@ const EventSchema: Schema = new Schema(
     },
     place: { type: String, required: true, trim: true },
     program: { type: String, required: true, trim: true },
+    eventStatus: { 
+      type: String, 
+      enum: ['INQUIRY', 'QUOTATION', 'APPROVED', 'CONFIRMED', 'LOADING', 'DISPATCHED', 'RETURNED', 'CLOSED'],
+      default: 'INQUIRY'
+    },
     createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     isDeleted: { type: Boolean, default: false },
     deletedBy: { type: Schema.Types.ObjectId, ref: 'User' },

@@ -1,13 +1,19 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
-export type UserRole = 'ADMIN' | 'REPRESENTATIVE' | 'LOADING_STAFF' | 'SITE_INCHARGE';
+export type UserRole = 
+  | 'ADMIN'
+  | 'SALES_REPRESENTATIVE'
+  | 'LOADING_STAFF'
+  | 'SITE_INCHARGE'
+  | 'CAPTAIN'
+  | 'STORE_KEEPER';
 
 export interface IUser extends Document {
-  username: string;
+  name: string;
   email: string;
-  passwordHash: string;
+  phone: string;
+  password: string;
   role: UserRole;
-  fullName: string;
   isActive: boolean;
   failedLoginAttempts: number;
   lockUntil?: Date;
@@ -17,15 +23,15 @@ export interface IUser extends Document {
 
 const UserSchema: Schema = new Schema(
   {
-    username: { type: String, required: true, unique: true, trim: true },
+    name: { type: String, required: true, trim: true },
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
-    passwordHash: { type: String, required: true },
+    phone: { type: String, required: true, trim: true },
+    password: { type: String, required: true },
     role: { 
       type: String, 
-      enum: ['ADMIN', 'REPRESENTATIVE', 'LOADING_STAFF', 'SITE_INCHARGE'], 
+      enum: ['ADMIN', 'SALES_REPRESENTATIVE', 'LOADING_STAFF', 'SITE_INCHARGE', 'CAPTAIN', 'STORE_KEEPER'], 
       required: true 
     },
-    fullName: { type: String, required: true },
     isActive: { type: Boolean, default: true },
     failedLoginAttempts: { type: Number, default: 0 },
     lockUntil: { type: Date }
@@ -34,9 +40,5 @@ const UserSchema: Schema = new Schema(
     timestamps: true
   }
 );
-
-// Indexing for performance
-UserSchema.index({ username: 1 });
-UserSchema.index({ email: 1 });
 
 export default mongoose.model<IUser>('User', UserSchema);

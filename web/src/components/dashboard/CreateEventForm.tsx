@@ -1,13 +1,14 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card } from '../ui/Card';
 import { Input } from '../ui/Input';
 import { Button } from '../ui/Button';
 import { Alert } from '../ui/Alert';
 import { SectionHeader } from '../ui/SectionHeader';
-import axios from 'axios';
+import { ClockTimePicker } from '../ui/ClockTimePicker';
+import { apiClient } from '../../utils/apiClient';
 
 interface CreateEventFormProps {
   initialItems?: any[];
@@ -28,14 +29,12 @@ export function CreateEventForm({ initialItems = [] }: CreateEventFormProps) {
   const [newEventTimeEnd, setNewEventTimeEnd] = useState('18:00');
   const [newEventProg, setNewEventProg] = useState('Lunch Program');
   const [newEventItems, setNewEventItems] = useState<{ itemId: string; quantity: number }[]>([]);
-
+  
   // Fetch Inventory items for selection
   const { data: inventoryData = [] } = useQuery({
     queryKey: ['inventory'],
     queryFn: async () => {
-      const res = await axios.get('http://localhost:5000/api/inventory', {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('accessToken')}` }
-      });
+      const res = await apiClient.get('/api/inventory');
       return res.data;
     },
     placeholderData: initialItems
@@ -43,14 +42,44 @@ export function CreateEventForm({ initialItems = [] }: CreateEventFormProps) {
 
   const activeItems = inventoryData.length > 0 ? inventoryData : initialItems;
 
+  const [availabilityMap, setAvailabilityMap] = useState<Record<string, number>>({});
+  const [isCheckingAvailability, setIsCheckingAvailability] = useState(false);
+
+  const fetchAvailabilityForDates = async (start: string, end: string) => {
+    if (!start || !end || activeItems.length === 0) return;
+    setIsCheckingAvailability(true);
+    try {
+      const map: Record<string, number> = {};
+      await Promise.all(
+        activeItems.map(async (item: any) => {
+          try {
+            const res = await apiClient.get(`/api/inventory/${item._id}/availability?startDate=${start}&endDate=${end}`);
+            map[item._id] = res.data.availableQty;
+          } catch (err) {
+            map[item._id] = item.currentStock;
+          }
+        })
+      );
+      setAvailabilityMap(map);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsCheckingAvailability(false);
+    }
+  };
+
+  useEffect(() => {
+    if (newEventDateStart && newEventDateEnd) {
+      const startIso = new Date(`${newEventDateStart}T${newEventTimeStart}`).toISOString();
+      const endIso = new Date(`${newEventDateEnd}T${newEventTimeEnd}`).toISOString();
+      fetchAvailabilityForDates(startIso, endIso);
+    }
+  }, [newEventDateStart, newEventDateEnd, newEventTimeStart, newEventTimeEnd, inventoryData]);
+
   // Create Event Mutation
   const createEventMutation = useMutation({
     mutationFn: async (payload: any) => {
-      const res = await axios.post('http://localhost:5000/api/events', payload, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
-        }
-      });
+      const res = await apiClient.post('/api/events', payload);
       return res.data;
     },
     onSuccess: () => {
@@ -151,17 +180,15 @@ export function CreateEventForm({ initialItems = [] }: CreateEventFormProps) {
           />
 
           <div className="grid grid-cols-2 gap-4">
-            <Input
+            <ClockTimePicker
               label="Start Time"
-              placeholder="10:00"
               value={newEventTimeStart}
-              onChange={(e: any) => setNewEventTimeStart(e.target.value)}
+              onChange={setNewEventTimeStart}
             />
-            <Input
+            <ClockTimePicker
               label="End Time"
-              placeholder="18:00"
               value={newEventTimeEnd}
-              onChange={(e: any) => setNewEventTimeEnd(e.target.value)}
+              onChange={setNewEventTimeEnd}
             />
           </div>
 
@@ -171,12 +198,18 @@ export function CreateEventForm({ initialItems = [] }: CreateEventFormProps) {
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {activeItems.map((item: any) => {
-                const existing = newEventItems.find((i) => i.itemId === item.itemCode);
+                const existing = newEventItems.find((i) => i.itemId === item._id);
                 const qty = existing ? existing.quantity : 0;
+                const availableQty = availabilityMap[item._id] !== undefined ? availabilityMap[item._id] : item.currentStock;
 
                 return (
-                  <div key={item.itemCode} className="p-3 rounded border border-[#E2E8F0] bg-slate-50 flex justify-between items-center">
-                    <span className="text-xs text-slate-700 font-medium">{item.name} (Stock: {item.currentStock})</span>
+                  <div key={item._id} className="p-3 rounded border border-[#E2E8F0] bg-slate-50 flex justify-between items-center shadow-sm">
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-xs text-slate-800 font-bold">{item.name}</span>
+                      <span className="text-[10px] font-mono text-slate-400">
+                        Code: {item.itemCode} • Avail: <strong className={availableQty === 0 ? 'text-red-600 font-extrabold animate-pulse' : 'text-emerald-600 font-bold'}>{availableQty}</strong> / {item.currentStock} max
+                      </span>
+                    </div>
                     <input
                       type="number"
                       className="w-16 glow-input text-xs p-1.5 text-center bg-white border border-[#E2E8F0] rounded"
@@ -185,15 +218,15 @@ export function CreateEventForm({ initialItems = [] }: CreateEventFormProps) {
                       onChange={(e) => {
                         const val = Number(e.target.value);
                         if (val <= 0) {
-                          setNewEventItems(newEventItems.filter((i) => i.itemId !== item.itemCode));
+                          setNewEventItems(newEventItems.filter((i) => i.itemId !== item._id));
                         } else {
-                          if (val > item.currentStock) {
-                            setErrorMessage(`Stock Warning: Only ${item.currentStock} units available for ${item.name}!`);
+                          if (val > availableQty) {
+                            setErrorMessage(`Stock Warning: Only ${availableQty} units available on these dates for ${item.name}!`);
                           } else {
                             setErrorMessage(null);
                           }
-                          const other = newEventItems.filter((i) => i.itemId !== item.itemCode);
-                          setNewEventItems([...other, { itemId: item.itemCode, quantity: val }]);
+                          const other = newEventItems.filter((i) => i.itemId !== item._id);
+                          setNewEventItems([...other, { itemId: item._id, quantity: val }]);
                         }
                       }}
                     />

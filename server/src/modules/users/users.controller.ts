@@ -4,15 +4,58 @@ import User from '../../models/User';
 import { handleControllerError } from '../../utils/errorHelper';
 import { hashPassword } from '../../utils/authHelper';
 
+// Schema for creating user
+const CreateUserSchema = z.object({
+  name: z.string().min(1, 'Name is required'),
+  email: z.string().email('Invalid email address'),
+  phone: z.string().min(5, 'Phone number must be at least 5 characters'),
+  password: z.string().min(6, 'Password must be at least 6 characters'),
+  role: z.enum(['ADMIN', 'SALES_REPRESENTATIVE', 'LOADING_STAFF', 'SITE_INCHARGE', 'CAPTAIN', 'STORE_KEEPER']),
+});
+
 // Schema for updating user
 const UpdateUserSchema = z.object({
-  fullName: z.string().min(1, 'Full name is required').optional(),
+  name: z.string().min(1, 'Name is required').optional(),
   email: z.string().email('Invalid email address').optional(),
-  username: z.string().min(3, 'Username must be at least 3 characters').optional(),
-  role: z.enum(['ADMIN', 'REPRESENTATIVE', 'LOADING_STAFF', 'SITE_INCHARGE']).optional(),
+  phone: z.string().min(5, 'Phone number must be at least 5 characters').optional(),
+  role: z.enum(['ADMIN', 'SALES_REPRESENTATIVE', 'LOADING_STAFF', 'SITE_INCHARGE', 'CAPTAIN', 'STORE_KEEPER']).optional(),
   isActive: z.boolean().optional(),
-  password: z.string().min(3, 'Password must be at least 3 characters').optional(),
+  password: z.string().min(6, 'Password must be at least 6 characters').optional(),
 });
+
+/**
+ * Create a user from the admin user directory
+ */
+export async function createUser(req: Request, res: Response) {
+  try {
+    const validated = CreateUserSchema.parse(req.body);
+
+    const existingUser = await User.findOne({ email: validated.email.toLowerCase() });
+    if (existingUser) {
+      return res.status(409).json({ error: 'Email already exists' });
+    }
+
+    const passwordHash = await hashPassword(validated.password);
+    const newUser = await User.create({
+      name: validated.name,
+      email: validated.email,
+      phone: validated.phone,
+      password: passwordHash,
+      role: validated.role,
+      isActive: true,
+    });
+
+    const createdUser = newUser.toObject();
+    delete (createdUser as any).password;
+
+    return res.status(201).json({
+      message: 'User created successfully',
+      user: createdUser,
+    });
+  } catch (error: any) {
+    return handleControllerError(res, error);
+  }
+}
 
 /**
  * Get all users, optionally filtered by role
@@ -27,7 +70,7 @@ export async function getUsers(req: Request, res: Response) {
     }
 
     const users = await User.find(query)
-      .select('-passwordHash') // Don't send password hashes
+      .select('-password') // Don't send password hashes
       .sort({ createdAt: -1 });
 
     return res.status(200).json(users);
@@ -49,38 +92,35 @@ export async function updateUser(req: Request, res: Response) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    // Check for username/email conflicts if they are being updated
-    if (validated.username || validated.email) {
+    // Check for email conflicts if it is being updated
+    if (validated.email) {
       const existingUser = await User.findOne({
         _id: { $ne: id }, // Exclude current user
-        $or: [
-          ...(validated.username ? [{ username: validated.username }] : []),
-          ...(validated.email ? [{ email: validated.email }] : [])
-        ]
+        email: validated.email
       });
 
       if (existingUser) {
-        return res.status(409).json({ error: 'Username or email already exists for another user' });
+        return res.status(409).json({ error: 'Email already exists for another user' });
       }
     }
 
     // Update fields
-    if (validated.fullName !== undefined) user.fullName = validated.fullName;
+    if (validated.name !== undefined) user.name = validated.name;
     if (validated.email !== undefined) user.email = validated.email;
-    if (validated.username !== undefined) user.username = validated.username;
+    if (validated.phone !== undefined) user.phone = validated.phone;
     if (validated.role !== undefined) user.role = validated.role;
     if (validated.isActive !== undefined) user.isActive = validated.isActive;
     
     // If Admin is updating the password
     if (validated.password) {
-      user.passwordHash = await hashPassword(validated.password);
+      user.password = await hashPassword(validated.password);
     }
 
     await user.save();
 
     // Return user without password hash
     const updatedUser = user.toObject();
-    delete (updatedUser as any).passwordHash;
+    delete (updatedUser as any).password;
 
     return res.status(200).json({
       message: 'User updated successfully',

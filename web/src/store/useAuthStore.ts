@@ -1,11 +1,5 @@
 import { create } from 'zustand';
-
-interface User {
-  username: string;
-  fullName: string;
-  role: 'ADMIN' | 'REPRESENTATIVE' | 'LOADING_STAFF' | 'SITE_INCHARGE';
-  email?: string;
-}
+import { User } from '../types';
 
 interface AuthState {
   user: User | null;
@@ -24,10 +18,20 @@ export const useAuthStore = create<AuthState>((set) => ({
   isInitializing: true,
 
   login: (user: User, token: string) => {
-    localStorage.setItem('accessToken', token);
-    localStorage.setItem('user', JSON.stringify(user));
+    // Map backend fields to frontend properties for backward compatibility
+    const mappedUser: User = {
+      ...user,
+      fullName: user.name || user.fullName || '',
+      username: user.email || user.username || ''
+    };
+    
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('accessToken', token);
+      localStorage.setItem('user', JSON.stringify(mappedUser));
+    }
+
     set({
-      user,
+      user: mappedUser,
       accessToken: token,
       isAuthenticated: true,
       isInitializing: false,
@@ -35,14 +39,18 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   logout: () => {
-    localStorage.removeItem('accessToken');
-    localStorage.removeItem('user');
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('accessToken');
+      localStorage.removeItem('user');
+    }
+    
     set({
       user: null,
       accessToken: null,
       isAuthenticated: false,
       isInitializing: false,
     });
+
     // Safely redirect to root login page
     if (typeof window !== 'undefined') {
       window.location.href = '/';
@@ -57,9 +65,15 @@ export const useAuthStore = create<AuthState>((set) => ({
       const userStr = localStorage.getItem('user');
       
       if (token && userStr) {
-        const user = JSON.parse(userStr) as User;
+        const parsedUser = JSON.parse(userStr) as User;
+        const mappedUser: User = {
+          ...parsedUser,
+          fullName: parsedUser.name || parsedUser.fullName || '',
+          username: parsedUser.email || parsedUser.username || ''
+        };
+        
         set({
-          user,
+          user: mappedUser,
           accessToken: token,
           isAuthenticated: true,
           isInitializing: false,
@@ -67,7 +81,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       } else {
         set({
           user: null,
-          accessToken: null,
+          accessToken: token, // null
           isAuthenticated: false,
           isInitializing: false,
         });

@@ -1,5 +1,15 @@
 import { apiFetch } from '../utils/apiClient';
-import { Item, Event, User } from '../types';
+import { BillingDocument, BillingLineItem, Item, Event, User } from '../types';
+
+interface CreateBillingDocumentPayload {
+  documentType: 'QUOTATION' | 'INVOICE';
+  eventId?: string;
+  customer: BillingDocument['customer'];
+  event?: BillingDocument['event'];
+  terms?: string;
+  notes?: string;
+  lineItems: Partial<BillingLineItem>[];
+}
 
 /**
  * ----------------------------------------------------
@@ -11,7 +21,7 @@ import { Item, Event, User } from '../types';
  */
 
 // 1. Authentication Services
-export const loginApi = (payload: { username: string; password: string }) => {
+export const loginApi = (payload: { email: string; password: string }) => {
   return apiFetch('/api/auth/login', {
     method: 'POST',
     body: JSON.stringify(payload)
@@ -43,6 +53,19 @@ export const createItemApi = (payload: Item) => {
   });
 };
 
+export const updateItemApi = (itemCode: string, payload: Partial<Item>) => {
+  return apiFetch(`/api/inventory/${itemCode}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  });
+};
+
+export const deleteItemApi = (itemCode: string) => {
+  return apiFetch(`/api/inventory/${itemCode}`, {
+    method: 'DELETE'
+  });
+};
+
 export const linkSubItemsApi = (itemCode: string, subItemCodes: string[]) => {
   return apiFetch(`/api/inventory/${itemCode}/sub-items`, {
     method: 'POST',
@@ -55,9 +78,20 @@ export const getEventsApi = (): Promise<Event[]> => {
   return apiFetch('/api/events');
 };
 
+export const getEventByIdApi = (eventId: string): Promise<Event> => {
+  return apiFetch(`/api/events/${eventId}`);
+};
+
 export const createEventApi = (payload: any) => {
   return apiFetch('/api/events', {
     method: 'POST',
+    body: JSON.stringify(payload)
+  });
+};
+
+export const updateEventApi = (eventId: string, payload: any) => {
+  return apiFetch(`/api/events/${eventId}`, {
+    method: 'PUT',
     body: JSON.stringify(payload)
   });
 };
@@ -80,3 +114,53 @@ export const recoverEventApi = (eventId: string) => {
     method: 'POST'
   });
 };
+
+export const updateEventStatusApi = (eventId: string, eventStatus: string) => {
+  return apiFetch(`/api/events/${eventId}/status`, {
+    method: 'PUT',
+    body: JSON.stringify({ eventStatus })
+  });
+};
+
+// 4. Billing Services
+export const getBillingDocumentsApi = (): Promise<BillingDocument[]> => {
+  return apiFetch('/api/billing');
+};
+
+export const priceBillingDocumentApi = (lineItems: Partial<BillingLineItem>[]) => {
+  return apiFetch('/api/billing/price', {
+    method: 'POST',
+    body: JSON.stringify({ lineItems })
+  });
+};
+
+export const createBillingDocumentApi = (payload: CreateBillingDocumentPayload): Promise<BillingDocument> => {
+  return apiFetch('/api/billing', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+};
+
+export const convertQuotationToInvoiceApi = (quotationId: string): Promise<BillingDocument> => {
+  return apiFetch(`/api/billing/${quotationId}/convert-to-invoice`, {
+    method: 'POST'
+  });
+};
+
+// 5. Logistics Services
+export const getLogisticsLogApi = (eventId: string): Promise<any> => {
+  return apiFetch(`/api/logistics/${eventId}`);
+};
+
+export const updateLogisticsLogApi = (eventId: string, payload: any): Promise<any> => {
+  return apiFetch(`/api/logistics/${eventId}`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+};
+
+// 6. Deleted Event Recovery
+export const getDeletedEventsApi = (): Promise<Event[]> => {
+  return apiFetch('/api/events?showDeleted=true');
+};
+

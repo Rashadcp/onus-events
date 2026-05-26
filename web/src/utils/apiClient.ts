@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { useAuthStore } from '../store/useAuthStore';
 
-const BASE_URL = 'http://localhost:5000';
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
 // Create an Axios instance
 export const apiClient = axios.create({
@@ -96,6 +96,14 @@ export async function apiFetch(endpoint: string, options: any = {}): Promise<any
 export async function getUsers(role?: string) {
   const query = role ? `?role=${role}` : '';
   return apiFetch(`/api/users${query}`);
+}
+
+export async function createUser(data: unknown) {
+  return apiFetch('/api/users', {
+    method: 'POST',
+    body: JSON.stringify(data),
+    headers: { 'Content-Type': 'application/json' }
+  });
 }
 
 export async function updateUser(id: string, data: any) {

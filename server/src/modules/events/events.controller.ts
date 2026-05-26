@@ -3,6 +3,13 @@ import { z } from 'zod';
 import mongoose from 'mongoose';
 import Event from '../../models/Event';
 import Item, { ItemDepartment } from '../../models/Item';
+import { 
+  checkBatchAvailability, 
+  createReservations, 
+  confirmDepartmentReservations, 
+  cancelEventReservations, 
+  restoreEventReservations 
+} from '../../services/reservationEngine';
 
 // Event Creation Validation Schema
 const EventCreateSchema = z.object({
@@ -22,65 +29,84 @@ const EventCreateSchema = z.object({
       itemId: z.string(),
       quantity: z.number().int().positive('Quantity must be greater than 0')
     })
-  )
+  ),
+  eventStatus: z.enum(['INQUIRY', 'QUOTATION', 'APPROVED', 'CONFIRMED', 'LOADING', 'DISPATCHED', 'RETURNED', 'CLOSED']).optional()
 });
 
 /**
  * Create a new Event booking (Sales Rep & Admin).
  */
 export async function createEvent(req: Request, res: Response) {
+  const session = await mongoose.startSession();
+  session.startTransaction();
   try {
     const validated = EventCreateSchema.parse(req.body);
     const userId = req.user?.userId;
 
     if (!userId) {
+      await session.abortTransaction();
+      session.endSession();
       return res.status(401).json({ error: 'Unauthorized user session context.' });
     }
 
-    // 1. Live Stock Validation
-    const itemIds = validated.items.map((item) => new mongoose.Types.ObjectId(item.itemId));
-    const itemsInDb = await Item.find({ _id: { $in: itemIds }, isActive: true });
+    // 1. Real-time overlap conflict check with buffer time logic
+    const { isFullyAvailable, results } = await checkBatchAvailability(
+      validated.items,
+      new Date(validated.eventDate.start),
+      new Date(validated.eventDate.end)
+    );
 
-    const itemMap = new Map(itemsInDb.map((item) => [item._id.toString(), item]));
+    if (!isFullyAvailable) {
+      const shortages = results
+        .filter((r) => !r.isAvailable)
+        .map((r) => `${r.name} (${r.itemCode}): Requested ${r.requestedQty}, Available ${r.availableQty} (Total stock: ${r.currentStock})`);
 
-    // Check stock for each requested item
-    const shortages: string[] = [];
-    for (const reqItem of validated.items) {
-      const dbItem = itemMap.get(reqItem.itemId);
-      if (!dbItem) {
-        return res.status(400).json({ error: `Selected item with ID ${reqItem.itemId} is invalid or disabled.` });
-      }
-
-      if (dbItem.currentStock < reqItem.quantity) {
-        shortages.push(
-          `${dbItem.name} (${dbItem.itemCode}): Requested ${reqItem.quantity}, Available ${dbItem.currentStock}`
-        );
-      }
-    }
-
-    if (shortages.length > 0) {
+      await session.abortTransaction();
+      session.endSession();
       return res.status(400).json({
-        error: 'Stock Availability Warning: Insufficient inventory levels for these items.',
+        error: 'Stock Availability Clash: Insufficient inventory levels due to overlapping events.',
         shortages
       });
     }
 
-    // 2. Save Event Draft in Database
-    const newEvent = await Event.create({
-      ...validated,
-      eventDate: {
-        start: new Date(validated.eventDate.start),
-        end: new Date(validated.eventDate.end)
-      },
-      createdBy: new mongoose.Types.ObjectId(userId),
-      isCompleteEntry: true // Mark as true if creation validation completes successfully
-    });
+    // 2. Save Event Draft inside the transaction
+    const newEvents = await Event.create(
+      [
+        {
+          ...validated,
+          eventDate: {
+            start: new Date(validated.eventDate.start),
+            end: new Date(validated.eventDate.end)
+          },
+          createdBy: new mongoose.Types.ObjectId(userId),
+          eventStatus: validated.eventStatus || 'INQUIRY',
+          isCompleteEntry: true
+        }
+      ],
+      { session }
+    );
+
+    const newEvent = newEvents[0];
+
+    // 3. Register temporary draft reservations (exhibits 24-hr TTL auto-expiry)
+    await createReservations(
+      newEvent._id,
+      validated.items,
+      new Date(validated.eventDate.start),
+      new Date(validated.eventDate.end),
+      session
+    );
+
+    await session.commitTransaction();
+    session.endSession();
 
     return res.status(201).json({
-      message: 'Event created successfully as draft',
+      message: 'Event booked successfully as draft and inventory reserved!',
       event: newEvent
     });
   } catch (error: any) {
+    await session.abortTransaction();
+    session.endSession();
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: error.errors[0].message });
     }
@@ -93,8 +119,14 @@ export async function createEvent(req: Request, res: Response) {
  */
 export async function getEvents(req: Request, res: Response) {
   try {
-    const { fromDate, toDate, status } = req.query;
-    const filter: any = { isDeleted: false };
+    const { fromDate, toDate, status, showDeleted } = req.query;
+    const filter: any = {};
+
+    if (showDeleted === 'true') {
+      filter.isDeleted = true;
+    } else {
+      filter.isDeleted = false;
+    }
 
     if (fromDate || toDate) {
       filter['eventDate.start'] = {};
@@ -106,9 +138,14 @@ export async function getEvents(req: Request, res: Response) {
       }
     }
 
-    // Populate creator username & name
+    if (status) {
+      filter.eventStatus = status;
+    }
+
+    // Populate creator name & email
     const events = await Event.find(filter)
-      .populate('createdBy', 'username fullName')
+      .populate('createdBy', 'name email')
+      .populate('deletedBy', 'name email')
       .sort({ 'eventDate.start': 1 });
 
     return res.status(200).json(events);
@@ -125,13 +162,13 @@ export async function getEventById(req: Request, res: Response) {
     const { id } = req.params;
     const event = await Event.findOne({ _id: id, isDeleted: false })
       .populate('items.itemId')
-      .populate('createdBy', 'username fullName')
-      .populate('confirmations.COUNTER_DECOR.confirmedBy', 'fullName')
-      .populate('confirmations.CLOTH_DECOR.confirmedBy', 'fullName')
-      .populate('confirmations.RENTAL_ITEMS.confirmedBy', 'fullName')
-      .populate('confirmations.EXPENSE_CHARGES.confirmedBy', 'fullName')
-      .populate('confirmations.STAFF.confirmedBy', 'fullName')
-      .populate('confirmations.OUTSIDE_RENTAL.confirmedBy', 'fullName');
+      .populate('createdBy', 'name email')
+      .populate('confirmations.COUNTER_DECOR.confirmedBy', 'name')
+      .populate('confirmations.CLOTH_DECOR.confirmedBy', 'name')
+      .populate('confirmations.RENTAL_ITEMS.confirmedBy', 'name')
+      .populate('confirmations.EXPENSE_CHARGES.confirmedBy', 'name')
+      .populate('confirmations.STAFF.confirmedBy', 'name')
+      .populate('confirmations.OUTSIDE_RENTAL.confirmedBy', 'name');
 
     if (!event) {
       return res.status(404).json({ error: 'Event not found.' });
@@ -147,11 +184,15 @@ export async function getEventById(req: Request, res: Response) {
  * Soft Delete an Event with Auditor Identity logging (Sales Rep & Admin).
  */
 export async function deleteEvent(req: Request, res: Response) {
+  const session = await mongoose.startSession();
+  session.startTransaction();
   try {
     const { id } = req.params;
     const userId = req.user?.userId;
 
     if (!userId) {
+      await session.abortTransaction();
+      session.endSession();
       return res.status(401).json({ error: 'Unauthorized user session context.' });
     }
 
@@ -164,18 +205,28 @@ export async function deleteEvent(req: Request, res: Response) {
           deletedAt: new Date()
         } 
       },
-      { new: true }
+      { new: true, session }
     );
 
     if (!event) {
+      await session.abortTransaction();
+      session.endSession();
       return res.status(404).json({ error: 'Event not found or already deleted.' });
     }
 
+    // Cancel and release all associated reservations
+    await cancelEventReservations(event._id, session);
+
+    await session.commitTransaction();
+    session.endSession();
+
     return res.status(200).json({
-      message: 'Event soft deleted successfully.',
+      message: 'Event deleted successfully and reservations cancelled.',
       deletedBy: userId
     });
   } catch (error: any) {
+    await session.abortTransaction();
+    session.endSession();
     return res.status(500).json({ error: 'Internal Server Error: ' + error.message });
   }
 }
@@ -184,6 +235,8 @@ export async function deleteEvent(req: Request, res: Response) {
  * Restore/Recover a deleted event (Admin Only).
  */
 export async function recoverEvent(req: Request, res: Response) {
+  const session = await mongoose.startSession();
+  session.startTransaction();
   try {
     const { id } = req.params;
 
@@ -193,18 +246,39 @@ export async function recoverEvent(req: Request, res: Response) {
         $set: { isDeleted: false },
         $unset: { deletedBy: 1, deletedAt: 1 }
       },
-      { new: true }
+      { new: true, session }
     );
 
     if (!restoredEvent) {
+      await session.abortTransaction();
+      session.endSession();
       return res.status(404).json({ error: 'Deleted Event not found.' });
     }
 
+    // Re-verify and restore reservations for recovered booking
+    const items = restoredEvent.items.map((i: any) => ({
+      itemId: i.itemId.toString(),
+      quantity: i.quantity
+    }));
+
+    await restoreEventReservations(
+      restoredEvent._id,
+      restoredEvent.eventDate.start,
+      restoredEvent.eventDate.end,
+      items,
+      session
+    );
+
+    await session.commitTransaction();
+    session.endSession();
+
     return res.status(200).json({
-      message: 'Event recovered successfully.',
+      message: 'Event and reservations recovered successfully.',
       event: restoredEvent
     });
   } catch (error: any) {
+    await session.abortTransaction();
+    session.endSession();
     return res.status(500).json({ error: 'Internal Server Error: ' + error.message });
   }
 }
@@ -241,8 +315,7 @@ export async function confirmDepartment(req: Request, res: Response) {
       return res.status(400).json({ error: 'Invalid department code.' });
     }
 
-    // Fetch the event with item details populated to filter by department
-    const event = await Event.findOne({ _id: id, isDeleted: false }).populate('items.itemId');
+    const event = await Event.findOne({ _id: id, isDeleted: false });
     if (!event) {
       await session.abortTransaction();
       session.endSession();
@@ -257,32 +330,8 @@ export async function confirmDepartment(req: Request, res: Response) {
       return res.status(400).json({ error: `Department ${department} is already confirmed.` });
     }
 
-    // Filter event items that belong to the confirming department
-    const dptItems = event.items.filter((eventItem: any) => {
-      const dbItem = eventItem.itemId;
-      return dbItem && dbItem.department === department;
-    });
-
-    // Deduct stock for each department item
-    for (const dptItem of dptItems) {
-      const dbItem: any = dptItem.itemId;
-      const deductionQty = dptItem.quantity;
-
-      // Decrement the currentStock in DB
-      const updatedItem = await Item.findOneAndUpdate(
-        { _id: dbItem._id, currentStock: { $gte: deductionQty }, isActive: true },
-        { $inc: { currentStock: -deductionQty } },
-        { new: true, session }
-      );
-
-      if (!updatedItem) {
-        await session.abortTransaction();
-        session.endSession();
-        return res.status(400).json({
-          error: `Failed to confirm department: Insufficient stock for item ${dbItem.name} (${dbItem.itemCode}).`
-        });
-      }
-    }
+    // Transition reservation statuses for this department to CONFIRMED
+    await confirmDepartmentReservations(event._id, department, session);
 
     // Update confirmation flag in the event document
     const updatePath = `confirmations.${department}`;
@@ -298,11 +347,149 @@ export async function confirmDepartment(req: Request, res: Response) {
     session.endSession();
 
     return res.status(200).json({
-      message: `Department ${department} confirmed and stock inventory deducted successfully.`
+      message: `Department ${department} confirmed and stock reservations locked successfully.`
     });
   } catch (error: any) {
     await session.abortTransaction();
     session.endSession();
+    return res.status(500).json({ error: 'Internal Server Error: ' + error.message });
+  }
+}
+
+/**
+ * Update Event Status (Lifecycle Management).
+ */
+export async function updateEventStatus(req: Request, res: Response) {
+  try {
+    const { id } = req.params;
+    const { eventStatus } = req.body;
+    
+    const validStatuses = ['INQUIRY', 'QUOTATION', 'APPROVED', 'CONFIRMED', 'LOADING', 'DISPATCHED', 'RETURNED', 'CLOSED'];
+    if (!validStatuses.includes(eventStatus)) {
+      return res.status(400).json({ error: 'Invalid event status provided.' });
+    }
+
+    const event = await Event.findOneAndUpdate(
+      { _id: id, isDeleted: false },
+      { $set: { eventStatus } },
+      { new: true }
+    );
+
+    if (!event) {
+      return res.status(404).json({ error: 'Event not found.' });
+    }
+
+    return res.status(200).json({
+      message: `Event status updated to ${eventStatus}.`,
+      event
+    });
+  } catch (error: any) {
+    return res.status(500).json({ error: 'Internal Server Error: ' + error.message });
+  }
+}
+
+/**
+ * Generic Event update controller (Admin & Sales Rep).
+ */
+export async function updateEvent(req: Request, res: Response) {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+  try {
+    const { id } = req.params;
+    const validated = EventCreateSchema.parse(req.body);
+    const userId = req.user?.userId;
+
+    if (!userId) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(401).json({ error: 'Unauthorized user session context.' });
+    }
+
+    const event = await Event.findOne({ _id: id, isDeleted: false });
+    if (!event) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(404).json({ error: 'Event not found or already deleted.' });
+    }
+
+    // 1. Release all old reservations first
+    await cancelEventReservations(event._id, session);
+
+    // 2. Perform availability overlap conflict check on the new parameters
+    const { isFullyAvailable, results } = await checkBatchAvailability(
+      validated.items,
+      new Date(validated.eventDate.start),
+      new Date(validated.eventDate.end)
+    );
+
+    if (!isFullyAvailable) {
+      const shortages = results
+        .filter((r) => !r.isAvailable)
+        .map((r) => `${r.name} (${r.itemCode}): Requested ${r.requestedQty}, Available ${r.availableQty}`);
+
+      // Rollback: Re-verify/restore reservations for original event parameters since update failed
+      const originalItems = event.items.map((i: any) => ({
+        itemId: i.itemId.toString(),
+        quantity: i.quantity
+      }));
+      await restoreEventReservations(
+        event._id,
+        event.eventDate.start,
+        event.eventDate.end,
+        originalItems,
+        session
+      );
+
+      await session.commitTransaction();
+      session.endSession();
+      return res.status(400).json({
+        error: 'Stock Availability Clash: Overlapping schedule constraints.',
+        shortages
+      });
+    }
+
+    // 3. Save new event details
+    const updatedEvent = await Event.findOneAndUpdate(
+      { _id: id },
+      {
+        $set: {
+          customerName: validated.customerName,
+          place: validated.place,
+          eventDate: {
+            start: new Date(validated.eventDate.start),
+            end: new Date(validated.eventDate.end)
+          },
+          timeWindow: validated.timeWindow,
+          program: validated.program,
+          items: validated.items,
+          eventStatus: validated.eventStatus || event.eventStatus
+        }
+      },
+      { new: true, session }
+    );
+
+    // 4. Re-create new reservations
+    await createReservations(
+      event._id,
+      validated.items,
+      new Date(validated.eventDate.start),
+      new Date(validated.eventDate.end),
+      session
+    );
+
+    await session.commitTransaction();
+    session.endSession();
+
+    return res.status(200).json({
+      message: 'Event updated successfully and reservations adjusted!',
+      event: updatedEvent
+    });
+  } catch (error: any) {
+    await session.abortTransaction();
+    session.endSession();
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: error.errors[0].message });
+    }
     return res.status(500).json({ error: 'Internal Server Error: ' + error.message });
   }
 }

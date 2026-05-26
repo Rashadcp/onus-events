@@ -3,14 +3,17 @@ import mongoose from 'mongoose';
 import cors from 'cors';
 import helmet from 'helmet';
 import dotenv from 'dotenv';
+import http from 'http';
 import apiRoutes from './routes';
 import User from './models/User';
 import { hashPassword } from './utils/authHelper';
+import { initWebSocket } from './services/websocket';
 
 // Load environmental variables
 dotenv.config();
 
 const app = express();
+const server = http.createServer(app);
 const PORT = process.env.PORT || 5000;
 
 // Security Middlewares
@@ -67,27 +70,47 @@ async function seedAdminUser() {
     const defaultPassword = '123';
     const passwordHash = await hashPassword(defaultPassword);
 
-    const adminUser = await User.findOne({ username: 'admin' });
+    // Look for any existing admin user by email or legacy username
+    const adminUser = await User.findOne({ 
+      $or: [
+        { email: 'admin@onusevent.com' },
+        { username: 'admin' } as any
+      ]
+    });
+
     if (!adminUser) {
       console.log('🌱 Seeding default Admin user...');
-      const admin = await User.create({
-        username: 'admin',
+      await User.create({
+        name: 'System Administrator',
         email: 'admin@onus-event.com',
-        passwordHash,
+        phone: '0000000000',
+        password: passwordHash,
         role: 'ADMIN',
-        fullName: 'System Administrator',
         isActive: true
       });
       console.log('✅ Default Admin seeded successfully!');
     } else {
-      // Overwrite/Force password to 123
-      adminUser.passwordHash = passwordHash;
+      console.log('🌱 Migrating and seeding default Admin user...');
+      const rawUser = adminUser as any;
+      
+      // Safe schema migration
+      adminUser.name = rawUser.name || rawUser.fullName || 'System Administrator';
+      adminUser.phone = rawUser.phone || '0000000000';
+      adminUser.password = passwordHash;
+      adminUser.role = 'ADMIN';
+      adminUser.isActive = true;
+
+      // Clean up legacy keys
+      adminUser.set('username', undefined);
+      adminUser.set('fullName', undefined);
+      adminUser.set('passwordHash', undefined);
+
       await adminUser.save();
-      console.log('✅ Existing Admin password updated successfully to: 123');
+      console.log('✅ Existing Admin migrated and password updated successfully to: 123');
     }
 
     console.log('---------------------------------------------');
-    console.log('Username: admin');
+    console.log('Email: admin@onus-event.com');
     console.log(`Password: ${defaultPassword}`);
     console.log('---------------------------------------------');
   } catch (error: any) {
@@ -106,8 +129,11 @@ mongoose
     // Seed default administrator if required
     await seedAdminUser();
 
-    app.listen(PORT, () => {
-      console.log(`🚀 API Backend Server is running in ${process.env.NODE_ENV} mode on port ${PORT}`);
+    // Initialize WebSocket Server
+    initWebSocket(server);
+
+    server.listen(PORT, () => {
+      console.log(`🚀 API Backend Server (with WebSockets) is running in ${process.env.NODE_ENV} mode on port ${PORT}`);
     });
   })
   .catch((err) => {
