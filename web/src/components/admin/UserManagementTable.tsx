@@ -5,9 +5,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card } from '../ui/Card';
 import { Input } from '../ui/Input';
 import { Button } from '../ui/Button';
-import { Alert } from '../ui/Alert';
 import { Modal } from '../ui/Modal';
 import { getUsers, updateUser, deleteUser, apiFetch } from '../../utils/apiClient';
+import { toast } from 'react-hot-toast';
 
 interface UserManagementTableProps {
   role: 'SITE_INCHARGE' | 'REPRESENTATIVE' | 'LOADING_STAFF';
@@ -18,8 +18,6 @@ interface UserManagementTableProps {
 
 export function UserManagementTable({ role, roleDisplayName, initialUsers = [], renderExtraInfo }: UserManagementTableProps) {
   const queryClient = useQueryClient();
-  const [message, setMessage] = useState<string | null>(null);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   
   // Registration State
   const [isRegModalOpen, setIsRegModalOpen] = useState(false);
@@ -54,12 +52,12 @@ export function UserManagementTable({ role, roleDisplayName, initialUsers = [], 
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['users', role] });
-      setMessage(`New ${roleDisplayName} registered successfully!`);
+      toast.success(`New ${roleDisplayName} registered successfully!`);
       setIsRegModalOpen(false);
       resetRegForm();
     },
     onError: (err: any) => {
-      setErrorMessage(err.message || 'Failed to register user.');
+      toast.error(err.message || 'Failed to register user.');
     }
   });
 
@@ -69,11 +67,11 @@ export function UserManagementTable({ role, roleDisplayName, initialUsers = [], 
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users', role] });
-      setMessage(`${roleDisplayName} details updated successfully!`);
+      toast.success(`${roleDisplayName} details updated successfully!`);
       setIsEditModalOpen(false);
     },
     onError: (err: any) => {
-      setErrorMessage(err.message || 'Failed to update user.');
+      toast.error(err.message || 'Failed to update user.');
     }
   });
 
@@ -83,10 +81,10 @@ export function UserManagementTable({ role, roleDisplayName, initialUsers = [], 
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users', role] });
-      setMessage(`${roleDisplayName} disabled successfully!`);
+      toast.success(`${roleDisplayName} disabled successfully!`);
     },
     onError: (err: any) => {
-      setErrorMessage(err.message || 'Failed to disable user.');
+      toast.error(err.message || 'Failed to disable user.');
     }
   });
 
@@ -100,7 +98,7 @@ export function UserManagementTable({ role, roleDisplayName, initialUsers = [], 
   const handleRegisterSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newStaffUser || !newStaffName || !newStaffEmail) {
-      setErrorMessage('Please fill all required fields.');
+      toast.error('Please fill all required fields.');
       return;
     }
     registerMutation.mutate({
@@ -149,9 +147,6 @@ export function UserManagementTable({ role, roleDisplayName, initialUsers = [], 
           <span>➕</span> Add {roleDisplayName}
         </Button>
       </div>
-
-      {message && <Alert message={message} type="success" onClose={() => setMessage(null)} />}
-      {errorMessage && <Alert message={errorMessage} type="error" onClose={() => setErrorMessage(null)} />}
 
       <Card>
         <h3 className="text-md font-bold text-[#0F172A] mb-6">Active {roleDisplayName}s</h3>

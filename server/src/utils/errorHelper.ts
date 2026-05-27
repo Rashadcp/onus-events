@@ -9,5 +9,8 @@ export function handleControllerError(res: Response, error: any) {
   if (error instanceof z.ZodError) {
     return res.status(400).json({ error: error.errors[0].message });
   }
+  if (error && (error.name === 'CastError' || error.kind === 'ObjectId')) {
+    return res.status(400).json({ error: 'Resource not found or invalid identifier format' });
+  }
   return res.status(500).json({ error: error.message || 'Internal Server Error' });
 }

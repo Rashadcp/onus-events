@@ -35,6 +35,7 @@ export interface IEvent extends Document {
   program: string;
   eventStatus: EventStatus;
   createdBy: mongoose.Types.ObjectId;
+  updatedBy?: mongoose.Types.ObjectId;
   isDeleted: boolean;
   deletedBy?: mongoose.Types.ObjectId;
   deletedAt?: Date;
@@ -81,6 +82,7 @@ const EventSchema: Schema = new Schema(
       default: 'INQUIRY'
     },
     createdBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    updatedBy: { type: Schema.Types.ObjectId, ref: 'User' },
     isDeleted: { type: Boolean, default: false },
     deletedBy: { type: Schema.Types.ObjectId, ref: 'User' },
     deletedAt: { type: Date },

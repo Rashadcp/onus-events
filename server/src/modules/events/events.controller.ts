@@ -3,6 +3,7 @@ import { z } from 'zod';
 import mongoose from 'mongoose';
 import Event from '../../models/Event';
 import Item, { ItemDepartment } from '../../models/Item';
+import BillingDocument from '../../models/BillingDocument';
 import { 
   checkBatchAvailability, 
   createReservations, 
@@ -15,8 +16,8 @@ import {
 const EventCreateSchema = z.object({
   customerName: z.string().min(1, 'Customer name is required'),
   eventDate: z.object({
-    start: z.string().datetime(),
-    end: z.string().datetime()
+    start: z.string(),
+    end: z.string()
   }),
   timeWindow: z.object({
     start: z.string(), // HH:MM
@@ -119,7 +120,7 @@ export async function createEvent(req: Request, res: Response) {
  */
 export async function getEvents(req: Request, res: Response) {
   try {
-    const { fromDate, toDate, status, showDeleted } = req.query;
+    const { fromDate, toDate, status, showDeleted, search } = req.query;
     const filter: any = {};
 
     if (showDeleted === 'true') {
@@ -142,9 +143,19 @@ export async function getEvents(req: Request, res: Response) {
       filter.eventStatus = status;
     }
 
-    // Populate creator name & email
+    if (search) {
+      filter.$or = [
+        { customerName: { $regex: search, $options: 'i' } },
+        { place: { $regex: search, $options: 'i' } },
+        { program: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    // Populate creator and updater details
     const events = await Event.find(filter)
+      .populate('items.itemId')
       .populate('createdBy', 'name email')
+      .populate('updatedBy', 'name email')
       .populate('deletedBy', 'name email')
       .sort({ 'eventDate.start': 1 });
 
@@ -163,6 +174,7 @@ export async function getEventById(req: Request, res: Response) {
     const event = await Event.findOne({ _id: id, isDeleted: false })
       .populate('items.itemId')
       .populate('createdBy', 'name email')
+      .populate('updatedBy', 'name email')
       .populate('confirmations.COUNTER_DECOR.confirmedBy', 'name')
       .populate('confirmations.CLOTH_DECOR.confirmedBy', 'name')
       .populate('confirmations.RENTAL_ITEMS.confirmedBy', 'name')
@@ -462,7 +474,8 @@ export async function updateEvent(req: Request, res: Response) {
           timeWindow: validated.timeWindow,
           program: validated.program,
           items: validated.items,
-          eventStatus: validated.eventStatus || event.eventStatus
+          eventStatus: validated.eventStatus || event.eventStatus,
+          updatedBy: new mongoose.Types.ObjectId(userId)
         }
       },
       { new: true, session }
@@ -490,6 +503,67 @@ export async function updateEvent(req: Request, res: Response) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ error: error.errors[0].message });
     }
+    return res.status(500).json({ error: 'Internal Server Error: ' + error.message });
+  }
+}
+
+/**
+ * Fetch unique customers aggregated from all active events and billing documents.
+ */
+export async function getCustomers(req: Request, res: Response) {
+  try {
+    const events = await Event.find({ isDeleted: false }).sort({ createdAt: -1 });
+    const billingDocs = await BillingDocument.find();
+
+    const customerMap = new Map<string, {
+      id: string;
+      name: string;
+      phone: string;
+      address: string;
+      totalEvents: number;
+      pendingAmount: number;
+      lastEventDate: string;
+    }>();
+
+    for (const event of events) {
+      const name = event.customerName.trim();
+      const nameKey = name.toLowerCase();
+
+      // Find billing documents to calculate pending balances
+      const customerDocs = billingDocs.filter(
+        (doc) => doc.customer.name.toLowerCase() === nameKey && doc.documentType === 'INVOICE'
+      );
+
+      const pendingAmount = customerDocs.reduce((sum, doc) => {
+        if (doc.status === 'PAID') return sum;
+        return sum + (doc.totals?.grandTotal || 0);
+      }, 0);
+
+      const eventDateStr = event.eventDate.start.toISOString().split('T')[0];
+
+      if (!customerMap.has(nameKey)) {
+        customerMap.set(nameKey, {
+          id: event._id.toString(),
+          name,
+          phone: customerDocs[0]?.customer.phone || '9562703957', // default or dynamic phone
+          address: customerDocs[0]?.customer.billingAddress || event.place,
+          totalEvents: 1,
+          pendingAmount,
+          lastEventDate: eventDateStr
+        });
+      } else {
+        const existing = customerMap.get(nameKey)!;
+        existing.totalEvents += 1;
+        existing.pendingAmount += pendingAmount;
+        if (eventDateStr > existing.lastEventDate) {
+          existing.lastEventDate = eventDateStr;
+        }
+      }
+    }
+
+    const customersList = Array.from(customerMap.values());
+    return res.status(200).json(customersList);
+  } catch (error: any) {
     return res.status(500).json({ error: 'Internal Server Error: ' + error.message });
   }
 }

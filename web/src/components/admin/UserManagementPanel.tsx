@@ -365,7 +365,7 @@ export function UserManagementPanel() {
         ) : (
           <div className="flex flex-col">
             {/* Headers */}
-            <div className="grid grid-cols-1 lg:grid-cols-[minmax(230px,2fr)_120px_160px_100px_132px] gap-3 px-5 py-3 border-b border-[#E2E8F0] bg-slate-50 font-bold uppercase tracking-wider text-[10px] text-slate-400">
+            <div className="grid grid-cols-1 lg:grid-cols-[minmax(230px,2fr)_120px_160px_100px_152px] gap-3 px-5 py-3 border-b border-[#E2E8F0] bg-slate-50 font-bold uppercase tracking-wider text-[10px] text-slate-400">
               <div>User Details</div>
               <div>Contact Phone</div>
               <div>Assigned Role</div>
@@ -379,7 +379,7 @@ export function UserManagementPanel() {
               return (
                 <div
                   key={user.id || user._id}
-                  className="grid grid-cols-1 lg:grid-cols-[minmax(230px,2fr)_120px_160px_100px_132px] gap-3 px-5 py-3 border-b border-[#E2E8F0] bg-white text-xs items-center hover:bg-slate-50/50 transition"
+                  className="grid grid-cols-1 lg:grid-cols-[minmax(230px,2fr)_120px_160px_100px_152px] gap-3 px-5 py-3 border-b border-[#E2E8F0] bg-white text-xs items-center hover:bg-slate-50/50 transition"
                 >
                   <div className="flex flex-col gap-0.5">
                     <p className="font-bold text-slate-900 text-sm">{user.name || user.fullName}</p>
@@ -398,19 +398,21 @@ export function UserManagementPanel() {
                       {isActive ? 'Active' : 'Disabled'}
                     </span>
                   </div>
-                  <div className="flex justify-start lg:justify-end gap-1.5 flex-nowrap">
-                    <Button
-                      variant="ghost"
+                  <div className="flex justify-start lg:justify-end gap-2 flex-nowrap">
+                    <button
+                      type="button"
                       onClick={() => openEditModal(user)}
-                      className="h-8 w-8 rounded-md border-slate-200 bg-white p-0 text-slate-600 shadow-none hover:bg-slate-100"
+                      className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 shadow-sm shadow-slate-900/5 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                       title="Edit user"
                       aria-label="Edit user"
                     >
-                      <Edit2 className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
+                      <Edit2 className="h-4 w-4" strokeWidth={2.25} />
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => toggleUserStatus(user)}
-                      className={`h-8 w-8 rounded-md p-0 border shadow-none transition ${
+                      disabled={updateMutation.isPending}
+                      className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border shadow-sm shadow-slate-900/5 transition focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:cursor-not-allowed disabled:opacity-60 ${
                         isActive
                           ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
                           : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
@@ -418,17 +420,18 @@ export function UserManagementPanel() {
                       title={isActive ? 'Suspend user' : 'Activate user'}
                       aria-label={isActive ? 'Suspend user' : 'Activate user'}
                     >
-                      {isActive ? <UserX className="h-3.5 w-3.5" /> : <UserCheck className="h-3.5 w-3.5" />}
-                    </Button>
-                    <Button
-                      variant="ghost"
+                      {isActive ? <UserX className="h-4 w-4" strokeWidth={2.25} /> : <UserCheck className="h-5 w-5" strokeWidth={2.25} />}
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => handleDelete(user)}
-                      className="h-8 w-8 rounded-md border-red-100 bg-red-50 p-0 text-red-600 shadow-none hover:bg-red-100"
+                      disabled={deleteMutation.isPending}
+                      className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-red-100 bg-red-50 text-red-600 shadow-sm shadow-slate-900/5 transition hover:border-red-200 hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-red-500/20 disabled:cursor-not-allowed disabled:opacity-60"
                       title="Delete user"
                       aria-label="Delete user"
                     >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
+                      <Trash2 className="h-4 w-4" strokeWidth={2.25} />
+                    </button>
                   </div>
                 </div>
               );

@@ -2,7 +2,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Calculator, FileDown, FileText, Printer, ReceiptText, RefreshCw, Send, Trash2 } from 'lucide-react';
+import { Calculator, FileDown, Plus, Printer, ReceiptText, RefreshCw, Send, Trash2, X } from 'lucide-react';
 import { BillingCopyType, BillingDocument, BillingLineItem, Event, Item } from '../../types';
 import {
   convertQuotationToInvoiceApi,
@@ -25,18 +25,67 @@ type DraftLine = Omit<BillingLineItem, 'taxableAmount' | 'gstAmount' | 'totalAmo
 const emptyLine = (): DraftLine => ({
   itemCode: '',
   description: '',
-  quantity: 1,
-  rentalDays: 1,
+  quantity: 0,
+  rentalDays: 0,
   unitRate: 0,
   discountType: 'FLAT',
   discountValue: 0,
-  gstRate: 18
+  gstRate: 0
 });
 
 const formatMoney = (value?: number) => `Rs. ${Number(value || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
-const inputClass = 'w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10';
+const inputClass = 'w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10';
+const pricingInputClass = 'w-full h-12 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10';
 const labelClass = 'text-[10px] font-bold uppercase tracking-widest text-slate-400';
 const getErrorMessage = (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback;
+const emptyNumberValue = (value: number) => value === 0 ? '' : value;
+
+const priceDraftLines = (draftLines: DraftLine[], overallGstRate: number) => {
+  const rawLineItems = draftLines.map((line) => {
+    const baseAmount = Number(line.quantity || 0) * Number(line.rentalDays || 0) * Number(line.unitRate || 0);
+    const discountAmount = line.discountType === 'PERCENTAGE'
+      ? baseAmount * (Number(line.discountValue || 0) / 100)
+      : Number(line.discountValue || 0);
+    return {
+      ...line,
+      gstRate: overallGstRate,
+      taxableAmount: Math.max(0, baseAmount - discountAmount)
+    };
+  });
+  const taxableTotal = rawLineItems.reduce((sum, line) => sum + Number(line.taxableAmount || 0), 0);
+  const gstTotal = taxableTotal * (Number(overallGstRate || 0) / 100);
+
+  const lineItems = draftLines.map((line) => {
+    const baseAmount = Number(line.quantity || 0) * Number(line.rentalDays || 0) * Number(line.unitRate || 0);
+    const discountAmount = line.discountType === 'PERCENTAGE'
+      ? baseAmount * (Number(line.discountValue || 0) / 100)
+      : Number(line.discountValue || 0);
+    const taxableAmount = Math.max(0, baseAmount - discountAmount);
+    const gstAmount = taxableTotal > 0 ? gstTotal * (taxableAmount / taxableTotal) : 0;
+    return {
+      ...line,
+      gstRate: overallGstRate,
+      taxableAmount,
+      gstAmount,
+      totalAmount: taxableAmount + gstAmount
+    };
+  });
+
+  return {
+    lineItems,
+    totals: {
+      subTotal: draftLines.reduce((sum, line) => sum + Number(line.quantity || 0) * Number(line.rentalDays || 0) * Number(line.unitRate || 0), 0),
+      discountTotal: lineItems.reduce((sum, line, index) => {
+        const original = draftLines[index];
+        const baseAmount = Number(original.quantity || 0) * Number(original.rentalDays || 0) * Number(original.unitRate || 0);
+        return sum + Math.max(0, baseAmount - Number(line.taxableAmount || 0));
+      }, 0),
+      taxableTotal: lineItems.reduce((sum, line) => sum + Number(line.taxableAmount || 0), 0),
+      gstTotal,
+      grandTotal: lineItems.reduce((sum, line) => sum + Number(line.totalAmount || 0), 0)
+    }
+  };
+};
 
 export function BillingWorkspace({ initialItems, initialEvents }: BillingWorkspaceProps) {
   const queryClient = useQueryClient();
@@ -48,12 +97,14 @@ export function BillingWorkspace({ initialItems, initialEvents }: BillingWorkspa
   const [billingAddress, setBillingAddress] = useState('');
   const [eventPlace, setEventPlace] = useState('');
   const [program, setProgram] = useState('');
-  const [terms, setTerms] = useState('Rental pricing is valid for the selected event dates. GST and transport charges are shown where applicable.');
-  const [notes, setNotes] = useState('');
+  const [terms] = useState('Rental pricing is valid for the selected event dates. GST and transport charges are shown where applicable.');
+  const [notes] = useState('');
+  const [overallGstRate, setOverallGstRate] = useState(18);
   const [lines, setLines] = useState<DraftLine[]>([emptyLine()]);
   const [preview, setPreview] = useState<{ lineItems: BillingLineItem[]; totals: BillingDocument['totals'] } | null>(null);
   const [selectedDocument, setSelectedDocument] = useState<BillingDocument | null>(null);
   const [copyType, setCopyType] = useState<BillingCopyType>('CUSTOMER_COPY');
+  const [previewModalOpen, setPreviewModalOpen] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -68,7 +119,15 @@ export function BillingWorkspace({ initialItems, initialEvents }: BillingWorkspa
     [initialEvents, selectedEventId]
   );
 
-  const activePreview = selectedDocument || (preview ? {
+  const pricedLines = useMemo(() => priceDraftLines(lines, overallGstRate), [lines, overallGstRate]);
+  const localDraftPreview = pricedLines;
+  const hasDraftContent = Boolean(
+    customerName ||
+    selectedEventId ||
+    lines.some((line) => line.itemCode || line.description || Number(line.unitRate) > 0)
+  );
+
+  const activePreview = selectedDocument || {
     _id: 'draft',
     documentType,
     documentNumber: 'Draft',
@@ -76,17 +135,20 @@ export function BillingWorkspace({ initialItems, initialEvents }: BillingWorkspa
     event: { program },
     issueDate: new Date().toISOString(),
     status: 'DRAFT',
-    lineItems: preview.lineItems,
-    totals: preview.totals,
+    lineItems: localDraftPreview.lineItems,
+    totals: localDraftPreview.totals,
     terms,
     notes
-  } as BillingDocument : null);
+  } as BillingDocument;
+
+  const showPreviewPanel = Boolean(selectedDocument || preview || hasDraftContent);
 
   const pricingMutation = useMutation({
-    mutationFn: () => priceBillingDocumentApi(lines),
+    mutationFn: () => priceBillingDocumentApi(lines.map((line) => ({ ...line, gstRate: overallGstRate }))),
     onSuccess: (data) => {
       setPreview(data);
       setSelectedDocument(null);
+      setPreviewModalOpen(true);
       setMessage('Pricing recalculated with GST and discounts.');
       setErrorMessage(null);
     },
@@ -111,12 +173,13 @@ export function BillingWorkspace({ initialItems, initialEvents }: BillingWorkspa
       },
       terms,
       notes,
-      lineItems: lines
+      lineItems: lines.map((line) => ({ ...line, gstRate: overallGstRate }))
     }),
     onSuccess: (document) => {
       queryClient.invalidateQueries({ queryKey: ['billingDocuments'] });
       queryClient.invalidateQueries({ queryKey: ['events'] });
       setSelectedDocument(document);
+      setPreviewModalOpen(true);
       setMessage(`${document.documentType === 'QUOTATION' ? 'Quotation' : 'Invoice'} ${document.documentNumber} created.`);
       setErrorMessage(null);
     },
@@ -129,6 +192,7 @@ export function BillingWorkspace({ initialItems, initialEvents }: BillingWorkspa
       queryClient.invalidateQueries({ queryKey: ['billingDocuments'] });
       queryClient.invalidateQueries({ queryKey: ['events'] });
       setSelectedDocument(invoice);
+      setPreviewModalOpen(true);
       setMessage(`Quotation converted to invoice ${invoice.documentNumber}.`);
       setErrorMessage(null);
     },
@@ -159,7 +223,8 @@ export function BillingWorkspace({ initialItems, initialEvents }: BillingWorkspa
 
   const downloadPdf = async () => {
     if (!selectedDocument || selectedDocument._id === 'draft') {
-      window.print();
+      setPreviewModalOpen(true);
+      window.setTimeout(() => window.print(), 50);
       return;
     }
 
@@ -179,12 +244,35 @@ export function BillingWorkspace({ initialItems, initialEvents }: BillingWorkspa
       <SectionHeader
         title="Quotation & Invoice Desk"
         description="Create GST-ready rental quotations, invoices, print copies, and PDF documents."
-      />
+      >
+        <select value={copyType} onChange={(event) => setCopyType(event.target.value as BillingCopyType)} className={`${inputClass} w-44 print:hidden`}>
+          <option value="CUSTOMER_COPY">Customer Copy</option>
+          <option value="STORE_COPY">Store Copy</option>
+          <option value="OFFICE_COPY">Office Copy</option>
+        </select>
+        <button
+          onClick={() => {
+            setPreviewModalOpen(true);
+            window.setTimeout(() => window.print(), 50);
+          }}
+          className="rounded-lg border border-slate-200 bg-white p-3 text-slate-600 hover:bg-slate-50 print:hidden"
+          title="Print"
+        >
+          <Printer className="w-4 h-4" />
+        </button>
+        <button
+          onClick={downloadPdf}
+          className="rounded-lg border border-slate-200 bg-white p-3 text-slate-600 hover:bg-slate-50 print:hidden"
+          title="Download PDF"
+        >
+          <FileDown className="w-4 h-4" />
+        </button>
+      </SectionHeader>
 
       {message && <Alert message={message} type="success" onClose={() => setMessage(null)} />}
       {errorMessage && <Alert message={errorMessage} type="error" onClose={() => setErrorMessage(null)} />}
 
-      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.15fr)_minmax(420px,0.85fr)] gap-6">
+      <div className="grid grid-cols-1 gap-6">
         <div className="flex flex-col gap-5">
           <div className="bg-white border border-slate-200 rounded-lg p-5 shadow-sm">
             <div className="flex flex-wrap gap-2 mb-5">
@@ -240,69 +328,83 @@ export function BillingWorkspace({ initialItems, initialEvents }: BillingWorkspa
           <div className="bg-white border border-slate-200 rounded-lg p-5 shadow-sm">
             <div className="flex justify-between items-center mb-4">
               <h3 className="font-black text-slate-900 flex items-center gap-2"><Calculator className="w-4 h-4 text-blue-600" /> Rental pricing</h3>
-              <Button variant="ghost" onClick={() => setLines((current) => [...current, emptyLine()])}>Add Line</Button>
+              <button
+                onClick={() => setLines((current) => [...current, emptyLine()])}
+                className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100"
+                title="Add line"
+                aria-label="Add line"
+              >
+                <Plus className="h-4 w-4" />
+              </button>
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="text-left text-[10px] uppercase tracking-widest text-slate-400 border-b border-slate-200">
-                    <th className="py-2 min-w-36">Item</th>
-                    <th className="py-2 min-w-48">Description</th>
-                    <th className="py-2 w-20">Qty</th>
-                    <th className="py-2 w-20">Days</th>
-                    <th className="py-2 w-28">Rate</th>
-                    <th className="py-2 w-28">Discount</th>
-                    <th className="py-2 w-20">GST</th>
-                    <th className="py-2 w-10"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {lines.map((line, index) => (
-                    <tr key={index} className="border-b border-slate-100">
-                      <td className="py-2 pr-2">
-                        <select value={line.itemCode} onChange={(event) => applyItemToLine(index, event.target.value)} className={inputClass}>
-                          <option value="">Custom</option>
-                          {initialItems.map((item) => (
-                            <option key={item.itemCode} value={item.itemCode}>{item.itemCode}</option>
-                          ))}
+            <div className="rounded-lg border border-slate-100">
+              <div className="hidden grid-cols-[150px_minmax(240px,1fr)_72px_72px_100px_170px_44px] gap-2 border-b border-slate-200 bg-slate-50 px-3 py-3 text-[11px] font-black uppercase tracking-widest text-slate-500 xl:grid">
+                <span>Item</span>
+                <span>Description</span>
+                <span>Qty</span>
+                <span>Days</span>
+                <span>Rate</span>
+                <span>Discount</span>
+                <span />
+              </div>
+
+              <div className="divide-y divide-slate-100">
+                {lines.map((line, index) => (
+                  <div key={index} className="grid gap-3 p-3 xl:grid-cols-[150px_minmax(240px,1fr)_72px_72px_100px_170px_44px] xl:items-start xl:gap-2">
+                    <label className="flex flex-col gap-1 xl:block">
+                      <span className={`${labelClass} xl:hidden`}>Item</span>
+                      <select value={line.itemCode} onChange={(event) => applyItemToLine(index, event.target.value)} className={pricingInputClass}>
+                        <option value="">Custom</option>
+                        {initialItems.map((item) => (
+                          <option key={item.itemCode} value={item.itemCode}>{item.itemCode}</option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label className="flex min-w-0 flex-col gap-1 xl:block">
+                      <span className={`${labelClass} xl:hidden`}>Description</span>
+                      <input value={line.description} onChange={(event) => updateLine(index, { description: event.target.value })} className={pricingInputClass} title={line.description} />
+                    </label>
+
+                    <label className="flex flex-col gap-1 xl:block">
+                      <span className={`${labelClass} xl:hidden`}>Qty</span>
+                      <input type="number" min="1" value={emptyNumberValue(line.quantity)} onChange={(event) => updateLine(index, { quantity: Number(event.target.value) })} className={pricingInputClass} />
+                    </label>
+
+                    <label className="flex flex-col gap-1 xl:block">
+                      <span className={`${labelClass} xl:hidden`}>Days</span>
+                      <input type="number" min="1" value={emptyNumberValue(line.rentalDays)} onChange={(event) => updateLine(index, { rentalDays: Number(event.target.value) })} className={pricingInputClass} />
+                    </label>
+
+                    <label className="flex flex-col gap-1 xl:block">
+                      <span className={`${labelClass} xl:hidden`}>Rate</span>
+                      <input type="number" min="0" value={emptyNumberValue(line.unitRate)} onChange={(event) => updateLine(index, { unitRate: Number(event.target.value) })} className={pricingInputClass} />
+                    </label>
+
+                    <label className="flex flex-col gap-1 xl:block">
+                      <span className={`${labelClass} xl:hidden`}>Discount</span>
+                      <div className="grid grid-cols-[minmax(0,1fr)_58px] gap-2">
+                        <input type="number" min="0" value={emptyNumberValue(line.discountValue)} onChange={(event) => updateLine(index, { discountValue: Number(event.target.value) })} className={pricingInputClass} />
+                        <select value={line.discountType} onChange={(event) => updateLine(index, { discountType: event.target.value as DraftLine['discountType'] })} className={pricingInputClass}>
+                          <option value="FLAT">Rs</option>
+                          <option value="PERCENTAGE">%</option>
                         </select>
-                      </td>
-                      <td className="py-2 pr-2">
-                        <input value={line.description} onChange={(event) => updateLine(index, { description: event.target.value })} className={inputClass} />
-                      </td>
-                      <td className="py-2 pr-2"><input type="number" min="1" value={line.quantity} onChange={(event) => updateLine(index, { quantity: Number(event.target.value) })} className={inputClass} /></td>
-                      <td className="py-2 pr-2"><input type="number" min="1" value={line.rentalDays} onChange={(event) => updateLine(index, { rentalDays: Number(event.target.value) })} className={inputClass} /></td>
-                      <td className="py-2 pr-2"><input type="number" min="0" value={line.unitRate} onChange={(event) => updateLine(index, { unitRate: Number(event.target.value) })} className={inputClass} /></td>
-                      <td className="py-2 pr-2">
-                        <div className="flex gap-1">
-                          <input type="number" min="0" value={line.discountValue} onChange={(event) => updateLine(index, { discountValue: Number(event.target.value) })} className={inputClass} />
-                          <select value={line.discountType} onChange={(event) => updateLine(index, { discountType: event.target.value as DraftLine['discountType'] })} className={`${inputClass} w-16`}>
-                            <option value="FLAT">Rs</option>
-                            <option value="PERCENTAGE">%</option>
-                          </select>
-                        </div>
-                      </td>
-                      <td className="py-2 pr-2"><input type="number" min="0" value={line.gstRate} onChange={(event) => updateLine(index, { gstRate: Number(event.target.value) })} className={inputClass} /></td>
-                      <td className="py-2 text-right">
-                        <button onClick={() => setLines((current) => current.filter((_, lineIndex) => lineIndex !== index))} className="p-2 rounded-lg text-red-500 hover:bg-red-50" title="Remove line">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                      </div>
+                    </label>
+
+                    <button onClick={() => setLines((current) => current.filter((_, lineIndex) => lineIndex !== index))} className="flex h-12 items-center justify-center rounded-lg text-red-500 hover:bg-red-50" title="Remove line">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
+            <div className="grid grid-cols-1 md:grid-cols-[160px] gap-3 mt-4">
               <label className="flex flex-col gap-1.5">
-                <span className={labelClass}>Terms</span>
-                <textarea value={terms} onChange={(event) => setTerms(event.target.value)} className={`${inputClass} min-h-20`} />
-              </label>
-              <label className="flex flex-col gap-1.5">
-                <span className={labelClass}>Notes</span>
-                <textarea value={notes} onChange={(event) => setNotes(event.target.value)} className={`${inputClass} min-h-20`} placeholder="Transport, setup, or office remarks" />
+                <span className={labelClass}>Overall GST %</span>
+                <input type="number" min="0" value={overallGstRate} onChange={(event) => setOverallGstRate(Number(event.target.value))} className={inputClass} />
               </label>
             </div>
 
@@ -320,7 +422,14 @@ export function BillingWorkspace({ initialItems, initialEvents }: BillingWorkspa
             <h3 className="font-black text-slate-900 mb-3 flex items-center gap-2"><ReceiptText className="w-4 h-4 text-blue-600" /> Recent documents</h3>
             <div className="flex flex-col divide-y divide-slate-100">
               {documents.map((document) => (
-                <button key={document._id} onClick={() => setSelectedDocument(document)} className="py-3 text-left flex items-center justify-between gap-3 hover:bg-slate-50 px-2 rounded-lg">
+                <button
+                  key={document._id}
+                  onClick={() => {
+                    setSelectedDocument(document);
+                    setPreviewModalOpen(true);
+                  }}
+                  className="py-3 text-left flex items-center justify-between gap-3 hover:bg-slate-50 px-2 rounded-lg"
+                >
                   <div>
                     <p className="text-sm font-black text-slate-900">{document.documentNumber} <span className="text-[10px] text-slate-400">{document.documentType}</span></p>
                     <p className="text-xs text-slate-500">{document.customer.name} - {formatMoney(document.totals.grandTotal)}</p>
@@ -333,25 +442,29 @@ export function BillingWorkspace({ initialItems, initialEvents }: BillingWorkspa
           </div>
         </div>
 
-        <aside className="bg-white border border-slate-200 rounded-lg shadow-sm xl:sticky xl:top-4 h-fit overflow-hidden print:shadow-none print:border-0">
-          <div className="p-4 border-b border-slate-200 flex items-center justify-between gap-3 print:hidden">
-            <div className="flex items-center gap-2">
-              <FileText className="w-4 h-4 text-blue-600" />
-              <span className="font-black text-sm text-slate-900">Invoice preview</span>
+      {previewModalOpen && showPreviewPanel && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/50 p-4 print:static print:block print:bg-white print:p-0">
+          <button className="absolute inset-0 print:hidden" onClick={() => setPreviewModalOpen(false)} aria-label="Close invoice preview" />
+          <div className="relative z-10 flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl print:max-h-none print:max-w-none print:overflow-visible print:rounded-none print:border-0 print:shadow-none">
+            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 print:hidden">
+              <div>
+                <h3 className="text-base font-black text-slate-900">Invoice Preview</h3>
+                <p className="text-sm text-slate-500">{copyType.replace('_', ' ')}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button onClick={() => window.print()} className="rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-50" title="Print">
+                  <Printer className="h-4 w-4" />
+                </button>
+                <button onClick={downloadPdf} className="rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-50" title="Download PDF">
+                  <FileDown className="h-4 w-4" />
+                </button>
+                <button onClick={() => setPreviewModalOpen(false)} className="rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-50" title="Close">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
             </div>
-            <div className="flex gap-2">
-              <select value={copyType} onChange={(event) => setCopyType(event.target.value as BillingCopyType)} className={`${inputClass} w-36`}>
-                <option value="CUSTOMER_COPY">Customer Copy</option>
-                <option value="STORE_COPY">Store Copy</option>
-                <option value="OFFICE_COPY">Office Copy</option>
-              </select>
-              <button onClick={() => window.print()} className="p-2 rounded-lg border border-slate-200 text-slate-600" title="Print"><Printer className="w-4 h-4" /></button>
-              <button onClick={downloadPdf} className="p-2 rounded-lg border border-slate-200 text-slate-600" title="Download PDF"><FileDown className="w-4 h-4" /></button>
-            </div>
-          </div>
-
-          {activePreview ? (
-            <div className="p-6 print:p-0" id="billing-preview">
+            <div className="overflow-y-auto p-6 print:overflow-visible print:p-0">
+              <div id="billing-preview" className="mx-auto max-w-4xl bg-white print:max-w-none">
               <div className="flex justify-between items-start border-b-2 border-slate-900 pb-4">
                 <div>
                   <p className="text-2xl font-black text-slate-950">ONUS EVENT ERP</p>
@@ -386,7 +499,6 @@ export function BillingWorkspace({ initialItems, initialEvents }: BillingWorkspa
                     <th className="py-2 px-2 text-right">Qty</th>
                     <th className="py-2 px-2 text-right">Days</th>
                     <th className="py-2 px-2 text-right">Rate</th>
-                    <th className="py-2 px-2 text-right">GST</th>
                     <th className="py-2 px-2 text-right">Total</th>
                   </tr>
                 </thead>
@@ -400,7 +512,6 @@ export function BillingWorkspace({ initialItems, initialEvents }: BillingWorkspa
                       <td className="py-2 px-2 text-right">{item.quantity}</td>
                       <td className="py-2 px-2 text-right">{item.rentalDays}</td>
                       <td className="py-2 px-2 text-right">{formatMoney(item.unitRate)}</td>
-                      <td className="py-2 px-2 text-right">{item.gstRate}%</td>
                       <td className="py-2 px-2 text-right font-black">{formatMoney(item.totalAmount)}</td>
                     </tr>
                   ))}
@@ -437,13 +548,11 @@ export function BillingWorkspace({ initialItems, initialEvents }: BillingWorkspa
                   Convert quotation to invoice
                 </Button>
               )}
+              </div>
             </div>
-          ) : (
-            <div className="p-12 text-center text-sm text-slate-400">
-              Calculate pricing or select a saved document to preview.
-            </div>
-          )}
-        </aside>
+          </div>
+        </div>
+      )}
       </div>
     </div>
   );

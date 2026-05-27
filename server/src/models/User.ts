@@ -14,6 +14,8 @@ export interface IUser extends Document {
   phone: string;
   password: string;
   role: UserRole;
+  monthlyBilling: number;
+  incentiveRate: number;
   isActive: boolean;
   failedLoginAttempts: number;
   lockUntil?: Date;
@@ -32,6 +34,8 @@ const UserSchema: Schema = new Schema(
       enum: ['ADMIN', 'SALES_REPRESENTATIVE', 'LOADING_STAFF', 'SITE_INCHARGE', 'CAPTAIN', 'STORE_KEEPER'], 
       required: true 
     },
+    monthlyBilling: { type: Number, default: 0, min: 0 },
+    incentiveRate: { type: Number, default: 5, min: 0 },
     isActive: { type: Boolean, default: true },
     failedLoginAttempts: { type: Number, default: 0 },
     lockUntil: { type: Date }

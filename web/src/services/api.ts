@@ -42,8 +42,18 @@ export const registerStaffApi = (payload: Partial<User> & { password?: string })
 };
 
 // 2. Inventory Services
-export const getInventoryApi = (): Promise<Item[]> => {
-  return apiFetch('/api/inventory');
+export const getInventoryApi = (params?: { department?: string; search?: string; startDate?: string; endDate?: string; includeInactive?: boolean } | any): Promise<Item[]> => {
+  const query = new URLSearchParams();
+  if (params && !params.queryKey) {
+    if (params.department) query.set('department', params.department);
+    if (params.search) query.set('search', params.search);
+    if (params.startDate) query.set('startDate', params.startDate);
+    if (params.endDate) query.set('endDate', params.endDate);
+    if (params.includeInactive) query.set('includeInactive', 'true');
+  }
+  
+  const queryString = query.toString();
+  return apiFetch(`/api/inventory${queryString ? `?${queryString}` : ''}`);
 };
 
 export const createItemApi = (payload: Item) => {
@@ -74,8 +84,21 @@ export const linkSubItemsApi = (itemCode: string, subItemCodes: string[]) => {
 };
 
 // 3. Event Booking Services
-export const getEventsApi = (): Promise<Event[]> => {
-  return apiFetch('/api/events');
+export const getEventsApi = (params?: { fromDate?: string; toDate?: string; status?: string; search?: string } | any): Promise<Event[]> => {
+  const query = new URLSearchParams();
+  if (params && !params.queryKey) {
+    if (params.fromDate) query.set('fromDate', params.fromDate);
+    if (params.toDate) query.set('toDate', params.toDate);
+    if (params.status) query.set('status', params.status);
+    if (params.search) query.set('search', params.search);
+  }
+
+  const queryString = query.toString();
+  return apiFetch(`/api/events${queryString ? `?${queryString}` : ''}`);
+};
+
+export const getCustomersApi = (): Promise<any[]> => {
+  return apiFetch('/api/customers');
 };
 
 export const getEventByIdApi = (eventId: string): Promise<Event> => {
@@ -162,5 +185,42 @@ export const updateLogisticsLogApi = (eventId: string, payload: any): Promise<an
 // 6. Deleted Event Recovery
 export const getDeletedEventsApi = (): Promise<Event[]> => {
   return apiFetch('/api/events?showDeleted=true');
+};
+
+// 7. Item Groups API (Admin-managed groups for Create Event)
+export interface ItemGroup {
+  _id: string;
+  key: string;
+  label: string;
+  description?: string;
+  color?: string;
+  sortOrder: number;
+  isActive: boolean;
+  isDefault: boolean;
+}
+
+export const getGroupsApi = (includeInactive = false): Promise<ItemGroup[]> => {
+  const query = includeInactive ? '?includeInactive=true' : '';
+  return apiFetch(`/api/groups${query}`);
+};
+
+export const createGroupApi = (payload: { key: string; label: string; description?: string; color?: string; sortOrder?: number }): Promise<{ group: ItemGroup }> => {
+  return apiFetch('/api/groups', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+};
+
+export const updateGroupApi = (id: string, payload: Partial<{ label: string; description: string; color: string; sortOrder: number; isActive: boolean }>): Promise<{ group: ItemGroup }> => {
+  return apiFetch(`/api/groups/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  });
+};
+
+export const deleteGroupApi = (id: string): Promise<{ message: string }> => {
+  return apiFetch(`/api/groups/${id}`, {
+    method: 'DELETE'
+  });
 };
 

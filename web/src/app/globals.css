@@ -219,8 +219,6 @@ body {
   }
 
   header,
-  aside:not(:has(#billing-preview)),
-  main > div > div:first-child,
   .print\:hidden {
     display: none !important;
   }
@@ -235,5 +233,34 @@ body {
     display: block !important;
     width: 100% !important;
     color: #0f172a !important;
+  }
+
+  body:has(#billing-preview) * {
+    visibility: hidden !important;
+  }
+
+  body:has(#billing-preview) #billing-preview,
+  body:has(#billing-preview) #billing-preview * {
+    visibility: visible !important;
+  }
+
+  body:has(#billing-preview) #billing-preview {
+    position: fixed !important;
+    inset: 0 auto auto 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+  }
+
+  body:has(#billing-preview) main,
+  body:has(#billing-preview) main > div,
+  body:has(#billing-preview) aside:has(#billing-preview) {
+    display: block !important;
+    width: 100% !important;
+    max-width: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
   }
 }

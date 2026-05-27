@@ -24,6 +24,10 @@ export default function LoginPage() {
         window.location.href = '/admin';
       } else if (user.role === 'SALES_REPRESENTATIVE' || user.role === 'REPRESENTATIVE') {
         window.location.href = '/representative';
+      } else if (user.role === 'LOADING_STAFF') {
+        window.location.href = '/logistics';
+      } else {
+        window.location.href = '/schedule';
       }
     }
   }, [isAuthenticated, user]);

@@ -1,12 +1,8 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
-export type ItemDepartment = 
-  | 'COUNTER_DECOR' 
-  | 'CLOTH_DECOR' 
-  | 'RENTAL_ITEMS' 
-  | 'EXPENSE_CHARGES' 
-  | 'STAFF' 
-  | 'OUTSIDE_RENTAL';
+// Department is now a flexible string matching any group key (built-in or custom)
+export type ItemDepartment = string;
+
 
 export type ItemStatus = 
   | 'AVAILABLE' 
@@ -29,6 +25,7 @@ export interface IItem extends Document {
   status: ItemStatus;
   subItems: string[]; // List of other item codes grouped with this item
   imageUrl?: string;
+  orderList: string[];
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -40,8 +37,8 @@ const ItemSchema: Schema = new Schema(
     name: { type: String, required: true, trim: true },
     department: {
       type: String,
-      enum: ['COUNTER_DECOR', 'CLOTH_DECOR', 'RENTAL_ITEMS', 'EXPENSE_CHARGES', 'STAFF', 'OUTSIDE_RENTAL'],
-      required: true
+      required: true,
+      trim: true
     },
     currentStock: { type: Number, required: true, min: 0 },
     minimumStock: { type: Number, required: true, min: 0, default: 5 },
@@ -57,6 +54,7 @@ const ItemSchema: Schema = new Schema(
     },
     subItems: { type: [String], default: [] },
     imageUrl: { type: String },
+    orderList: { type: [String], default: [] },
     isActive: { type: Boolean, default: true }
   },
   {

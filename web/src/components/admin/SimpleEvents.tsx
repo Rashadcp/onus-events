@@ -154,7 +154,7 @@ export function SimpleEvents() {
   const handleDelete = (eventId: string, customer: string) => {
     setDeletingEventId(eventId);
     setDeletingCustomerName(customer);
-    setDeleteConfirmText('');
+    setDeleteConfirmText(user?.fullName || user?.name || user?.email || '');
     setIsDeleteModalOpen(true);
   };
 
@@ -514,6 +514,12 @@ export function SimpleEvents() {
                 className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 transition placeholder:text-slate-400 font-medium text-slate-800"
                 required
               />
+            </div>
+
+            <div className="rounded-lg bg-red-50 p-3 text-xs text-red-700 font-semibold border border-red-100">
+              ⚠️ Deleting User: <span className="font-bold">{user?.fullName || user?.name || user?.email || 'System / Logged-in User'}</span>
+              <br />
+              This soft-delete action will be recorded and audited in system logs.
             </div>
 
             <div className="flex gap-3 justify-end border-t border-slate-100 pt-4 mt-2">

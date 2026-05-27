@@ -28,6 +28,8 @@ export const useAuthStore = create<AuthState>((set) => ({
     if (typeof window !== 'undefined') {
       localStorage.setItem('accessToken', token);
       localStorage.setItem('user', JSON.stringify(mappedUser));
+      document.cookie = `accessToken=${token}; path=/; max-age=604800; SameSite=Lax; Secure`;
+      document.cookie = `userRole=${mappedUser.role}; path=/; max-age=604800; SameSite=Lax; Secure`;
     }
 
     set({
@@ -42,6 +44,8 @@ export const useAuthStore = create<AuthState>((set) => ({
     if (typeof window !== 'undefined') {
       localStorage.removeItem('accessToken');
       localStorage.removeItem('user');
+      document.cookie = "accessToken=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax; Secure";
+      document.cookie = "userRole=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax; Secure";
     }
     
     set({
@@ -71,6 +75,11 @@ export const useAuthStore = create<AuthState>((set) => ({
           fullName: parsedUser.name || parsedUser.fullName || '',
           username: parsedUser.email || parsedUser.username || ''
         };
+        
+        if (typeof window !== 'undefined') {
+          document.cookie = `accessToken=${token}; path=/; max-age=604800; SameSite=Lax; Secure`;
+          document.cookie = `userRole=${mappedUser.role}; path=/; max-age=604800; SameSite=Lax; Secure`;
+        }
         
         set({
           user: mappedUser,

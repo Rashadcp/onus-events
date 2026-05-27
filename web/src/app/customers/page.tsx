@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '../../store/useAuthStore';
@@ -14,12 +14,14 @@ import {
   Phone, 
   Calendar, 
   IndianRupee, 
-  ChevronDown, 
-  ChevronUp, 
   ChevronLeft,
   AlertCircle,
   CheckCircle2,
-  FileText
+  FileText,
+  Clock,
+  MapPin,
+  Users,
+  X
 } from 'lucide-react';
 
 // UI Components
@@ -29,6 +31,7 @@ import { Button } from '../../components/ui/Button';
 interface CustomerAccount {
   name: string;
   phone: string;
+  address?: string;
   totalEvents: number;
   pendingAmount: number;
   lastEventDate: string;
@@ -48,7 +51,8 @@ export default function CustomerAccountsPage() {
 
   // Search filter
   const [searchTerm, setSearchTerm] = useState('');
-  const [expandedCustomer, setExpandedCustomer] = useState<string | null>(null);
+  const [selectedCustomerName, setSelectedCustomerName] = useState<string | null>(null);
+  const [isLedgerModalOpen, setIsLedgerModalOpen] = useState(false);
 
   // Queries: Fetch dynamic Events and Billing Documents
   const { data: events = [], isLoading: isEventsLoading } = useQuery({
@@ -72,35 +76,38 @@ export default function CustomerAccountsPage() {
       {
         name: 'Alwin Joy',
         phone: '9876543210',
+        address: 'Kochi, Kerala',
         totalEvents: 2,
         pendingAmount: 12350,
         lastEventDate: '2026-05-28',
         lastEventName: 'Wedding Reception Ceremony & Banquet',
         history: [
-          { program: 'Wedding Reception Ceremony', place: 'Grand Hyatt Convention Center, Kochi', date: '2026-05-28', status: 'CONFIRMED' },
-          { program: 'Stage Engagement Decor', place: 'Kochi Town Hall', date: '2026-04-12', status: 'CLOSED' }
+          { _id: '5f9f1b9b9b9b9b9b9b9b9b9b', program: 'Wedding Reception Ceremony', place: 'Grand Hyatt Convention Center, Kochi', date: '2026-05-28', status: 'CONFIRMED' },
+          { _id: '5f9f1b9b9b9b9b9b9b9b9b9c', program: 'Stage Engagement Decor', place: 'Kochi Town Hall', date: '2026-04-12', status: 'CLOSED' }
         ]
       },
       {
         name: 'Jane Smith',
         phone: '9876543211',
+        address: 'Trivandrum, Kerala',
         totalEvents: 1,
         pendingAmount: 0,
         lastEventDate: '2026-05-15',
         lastEventName: 'Corporate Annual Seminar',
         history: [
-          { program: 'Corporate Annual Seminar', place: 'Le Meridien Palace Hall, Trivandrum', date: '2026-05-15', status: 'CLOSED' }
+          { _id: '5f9f1b9b9b9b9b9b9b9b9b9d', program: 'Corporate Annual Seminar', place: 'Le Meridien Palace Hall, Trivandrum', date: '2026-05-15', status: 'CLOSED' }
         ]
       },
       {
         name: 'John Doe',
         phone: '9876543212',
+        address: 'Calicut, Kerala',
         totalEvents: 1,
         pendingAmount: 4500,
         lastEventDate: '2026-05-20',
         lastEventName: 'Engagement Stage Floral Setup',
         history: [
-          { program: 'Engagement Stage Floral Setup', place: 'Raviz Resort, Calicut', date: '2026-05-20', status: 'APPROVED' }
+          { _id: '5f9f1b9b9b9b9b9b9b9b9b9e', program: 'Engagement Stage Floral Setup', place: 'Raviz Resort, Calicut', date: '2026-05-20', status: 'APPROVED' }
         ]
       }
     ];
@@ -124,6 +131,7 @@ export default function CustomerAccountsPage() {
       }
 
       const eventRecord = {
+        _id: ev._id,
         program: ev.program?.split(' [Type:')[0] || 'Event booking',
         place: ev.place,
         date: ev.eventDate?.start ? new Date(ev.eventDate.start).toISOString().split('T')[0] : 'N/A',
@@ -137,6 +145,7 @@ export default function CustomerAccountsPage() {
         
         current.totalEvents += 1;
         if (parsedPhone && !current.phone) current.phone = parsedPhone;
+        if (ev.place && (!current.address || current.address === 'Not Provided')) current.address = ev.place;
         if (isNewer) {
           current.lastEventDate = eventRecord.date;
           current.lastEventName = eventRecord.program;
@@ -152,6 +161,7 @@ export default function CustomerAccountsPage() {
         map[key] = {
           name: ev.customerName.trim(),
           phone: parsedPhone || 'Not Provided',
+          address: ev.place || 'Not Provided',
           totalEvents: 1,
           pendingAmount: 0,
           lastEventDate: eventRecord.date,
@@ -176,11 +186,15 @@ export default function CustomerAccountsPage() {
         if (doc.customer?.phone && map[key].phone === 'Not Provided') {
           map[key].phone = doc.customer.phone;
         }
+        if (doc.customer?.billingAddress && (!map[key].address || map[key].address === 'Not Provided')) {
+          map[key].address = doc.customer.billingAddress;
+        }
       } else {
         // Create a dynamic customer from billing logs
         map[key] = {
           name: doc.customer.name.trim(),
           phone: doc.customer.phone || 'Not Provided',
+          address: doc.customer.billingAddress || doc.customer.eventPlace || 'Not Provided',
           totalEvents: 0,
           pendingAmount: isUnpaid ? grandTotal : 0,
           lastEventDate: doc.issueDate ? new Date(doc.issueDate).toISOString().split('T')[0] : 'N/A',
@@ -193,17 +207,21 @@ export default function CustomerAccountsPage() {
     return Object.values(map);
   };
 
-  const customerAccounts = aggregateCustomerAccounts();
+  const customerAccounts = useMemo(() => {
+    return aggregateCustomerAccounts();
+  }, [events, billingDocs]);
 
   // Search filters
-  const filteredAccounts = customerAccounts.filter(acc => 
-    acc.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    acc.phone.includes(searchTerm)
-  );
+  const filteredAccounts = useMemo(() => {
+    return customerAccounts.filter(acc => 
+      acc.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      acc.phone.includes(searchTerm)
+    );
+  }, [customerAccounts, searchTerm]);
 
-  const toggleExpand = (name: string) => {
-    setExpandedCustomer(expandedCustomer === name ? null : name);
-  };
+  const selectedCustomer = useMemo(() => {
+    return customerAccounts.find(c => c.name === selectedCustomerName) || null;
+  }, [customerAccounts, selectedCustomerName]);
 
   const getDuesStatusBadge = (pendingAmount: number) => {
     if (pendingAmount > 0) {
@@ -283,111 +301,64 @@ export default function CustomerAccountsPage() {
                   </thead>
                   <tbody>
                     {filteredAccounts.map((account) => {
-                      const isExpanded = expandedCustomer === account.name;
-                      
                       return (
-                        <React.Fragment key={account.name}>
-                          
-                          {/* Main Row */}
-                          <tr className="border-b border-slate-100 hover:bg-slate-50/40 transition">
-                            
-                            {/* Customer Name */}
-                            <td className="p-4 pl-6 font-bold text-slate-900 text-sm flex items-center gap-2">
-                              <div className="w-6 h-6 rounded-full bg-blue-50 border border-blue-100 text-blue-600 flex items-center justify-center font-extrabold text-[10px]">
-                                {account.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
-                              </div>
-                              {account.name}
-                            </td>
+                        <tr 
+                          key={account.name}
+                          onClick={() => {
+                            setSelectedCustomerName(account.name);
+                            setIsLedgerModalOpen(true);
+                          }}
+                          className="border-b border-slate-100 hover:bg-blue-50/30 transition cursor-pointer"
+                        >
+                          {/* Customer Name */}
+                          <td className="p-4 pl-6 font-bold text-slate-900 text-sm flex items-center gap-2">
+                            <div className="w-6 h-6 rounded-full bg-blue-50 border border-blue-100 text-blue-600 flex items-center justify-center font-extrabold text-[10px]">
+                              {account.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
+                            </div>
+                            {account.name}
+                          </td>
 
-                            {/* Phone */}
-                            <td className="p-4 text-slate-600 font-medium text-xs">
-                              <span className="flex items-center gap-1"><Phone className="w-3.5 h-3.5 text-slate-400" /> {account.phone}</span>
-                            </td>
+                          {/* Phone */}
+                          <td className="p-4 text-slate-600 font-medium text-xs">
+                            <span className="flex items-center gap-1"><Phone className="w-3.5 h-3.5 text-slate-400" /> {account.phone}</span>
+                          </td>
 
-                            {/* Total Events */}
-                            <td className="p-4 text-center font-bold text-sm text-slate-700">
-                              {account.totalEvents} {account.totalEvents === 1 ? 'Event' : 'Events'}
-                            </td>
+                          {/* Total Events */}
+                          <td className="p-4 text-center font-bold text-sm text-slate-700">
+                            {account.totalEvents} {account.totalEvents === 1 ? 'Event' : 'Events'}
+                          </td>
 
-                            {/* Outstanding Amount */}
-                            <td className="p-4 text-right text-sm">
-                              <div className="flex items-center gap-1.5 justify-end">
-                                <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded border text-xs font-bold ${getDuesStatusBadge(account.pendingAmount)}`}>
-                                  {account.pendingAmount > 0 ? (
-                                    <>
-                                      <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                                      <span>₹{account.pendingAmount.toLocaleString()} Due</span>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                                      <span>Paid-Up</span>
-                                    </>
-                                  )}
-                                </span>
-                              </div>
-                            </td>
+                          {/* Outstanding Amount */}
+                          <td className="p-4 text-right text-sm">
+                            <div className="flex items-center gap-1.5 justify-end">
+                              <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded border text-xs font-bold ${getDuesStatusBadge(account.pendingAmount)}`}>
+                                {account.pendingAmount > 0 ? (
+                                  <>
+                                    <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                                    <span>₹{account.pendingAmount.toLocaleString()} Due</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                    <span>Paid-Up</span>
+                                  </>
+                                )}
+                              </span>
+                            </div>
+                          </td>
 
-                            {/* Last Event Date */}
-                            <td className="p-4 text-center text-slate-500 font-semibold">
-                              {account.lastEventDate !== 'N/A' ? new Date(account.lastEventDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A'}
-                            </td>
+                          {/* Last Event Date */}
+                          <td className="p-4 text-center text-slate-500 font-semibold">
+                            {account.lastEventDate !== 'N/A' ? new Date(account.lastEventDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A'}
+                          </td>
 
-                            {/* Actions toggle history */}
-                            <td className="p-4 pr-6 text-center">
-                              <Button
-                                onClick={() => toggleExpand(account.name)}
-                                variant="ghost"
-                                className="text-[10px] py-1.5 px-3 border border-slate-200 hover:bg-slate-50 font-bold tracking-wider uppercase flex items-center justify-center gap-1 ml-auto cursor-pointer"
-                              >
-                                <span>History</span>
-                                {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                              </Button>
-                            </td>
-
-                          </tr>
-
-                          {/* Expandable History Row */}
-                          {isExpanded && (
-                            <tr>
-                              <td colSpan={6} className="bg-slate-50/50 p-6 border-b border-slate-100">
-                                <div className="flex flex-col gap-4 animate-in slide-in-from-top-1 duration-200">
-                                  <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
-                                    <FileText className="w-4 h-4 text-blue-600" />
-                                    <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider">Historical Booking Works Log</h4>
-                                  </div>
-
-                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    {account.history.map((hist, idx) => (
-                                      <div key={idx} className="p-3 border border-slate-200 bg-white rounded-lg flex justify-between items-center text-xs shadow-sm">
-                                        <div className="flex flex-col gap-0.5">
-                                          <p className="font-bold text-slate-800">{hist.program}</p>
-                                          <p className="text-[10px] text-slate-400 font-semibold">
-                                            📍 {hist.place} • 📅 {new Date(hist.date).toLocaleDateString()}
-                                          </p>
-                                        </div>
-                                        <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold border uppercase tracking-wider ${
-                                          hist.status === 'CONFIRMED' || hist.status === 'CLOSED'
-                                            ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
-                                            : 'bg-blue-50 text-blue-700 border-blue-100'
-                                        }`}>
-                                          {hist.status}
-                                        </span>
-                                      </div>
-                                    ))}
-
-                                    {account.history.length === 0 && (
-                                      <p className="text-xs text-slate-400 italic py-4 col-span-2 text-center">
-                                        No historical bookings found matching this customer name dynamically.
-                                      </p>
-                                    )}
-                                  </div>
-                                </div>
-                              </td>
-                            </tr>
-                          )}
-
-                        </React.Fragment>
+                          {/* Actions button */}
+                          <td className="p-4 pr-6 text-center">
+                            <span className="text-[10px] text-blue-600 hover:text-blue-700 font-extrabold uppercase tracking-wider underline">
+                              View Details
+                            </span>
+                          </td>
+                        </tr>
                       );
                     })}
 
@@ -403,9 +374,143 @@ export default function CustomerAccountsPage() {
               </div>
             )}
           </Card>
-
         </div>
 
+        {/* Client Ledger Summary Modal */}
+        {isLedgerModalOpen && selectedCustomer && (
+          <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4 md:p-6" role="dialog" aria-modal="true">
+            {/* Clickable backdrop */}
+            <div className="absolute inset-0 cursor-default" onClick={() => setIsLedgerModalOpen(false)} aria-hidden="true" />
+
+            {/* Main modal container */}
+            <div className="relative bg-white border border-slate-200/80 rounded-2xl shadow-2xl w-full max-w-lg flex flex-col max-h-[85vh] overflow-hidden z-10 animate-in zoom-in-95 duration-200">
+              
+              {/* Modal Header */}
+              <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                <div className="flex items-center gap-2">
+                  <Users className="w-5 h-5 text-blue-600" />
+                  <h3 className="font-extrabold text-slate-800 text-sm leading-tight">Client Ledger Summary</h3>
+                </div>
+                <button 
+                  onClick={() => setIsLedgerModalOpen(false)} 
+                  className="w-7 h-7 rounded-full border border-slate-200 bg-white hover:bg-slate-50 text-slate-500 hover:text-slate-700 flex items-center justify-center font-bold text-xs cursor-pointer transition shadow-xs outline-none focus:ring-2 focus:ring-blue-500/20"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Modal Body - Scrollable */}
+              <div className="p-6 overflow-y-auto space-y-5 custom-scrollbar">
+                {/* Client Information Header Card */}
+                <div className="bg-slate-50/75 border border-slate-100 p-4 rounded-2xl flex flex-col gap-2 shadow-2xs">
+                  <div className="flex items-center gap-2">
+                    <User className="w-4 h-4 text-blue-600 shrink-0" />
+                    <p className="text-sm font-extrabold text-slate-800">{selectedCustomer.name}</p>
+                  </div>
+                  
+                  <div className="flex items-center gap-2 text-xs text-slate-500 font-semibold">
+                    <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    <span>{selectedCustomer.phone}</span>
+                  </div>
+
+                  <div className="flex items-start gap-2 text-xs text-slate-500 font-semibold mt-0.5">
+                    <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
+                    <span className="leading-normal">Address: {selectedCustomer.address || 'Not Provided'}</span>
+                  </div>
+                </div>
+                
+                {/* Dues Balance Pill Block */}
+                {selectedCustomer.pendingAmount > 0 ? (
+                  <div className="rounded-2xl bg-rose-50/50 border border-rose-100 p-4 flex items-center justify-between shadow-2xs">
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-rose-500">Outstanding balance due</p>
+                      <p className="text-xl font-black text-rose-600 mt-1">
+                        Rs. {selectedCustomer.pendingAmount.toLocaleString('en-IN')}
+                      </p>
+                    </div>
+                    <div className="h-10 w-10 rounded-full bg-rose-50 border border-rose-200 flex items-center justify-center shrink-0">
+                      <AlertCircle className="w-5 h-5 text-rose-500" />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-2xl bg-emerald-50/50 border border-emerald-100 p-4 flex items-center justify-between shadow-2xs">
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-600">Account status</p>
+                      <p className="text-base font-extrabold text-emerald-700 mt-1">
+                        Fully Settled (No Dues)
+                      </p>
+                    </div>
+                    <div className="h-10 w-10 rounded-full bg-emerald-50 border border-emerald-250 flex items-center justify-center shrink-0">
+                      <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                    </div>
+                  </div>
+                )}
+
+                {/* Event Timeline History */}
+                <div>
+                  <h4 className="text-[10px] uppercase tracking-wider text-slate-400 font-bold mb-3 flex items-center gap-1">
+                    <Clock className="w-3.5 h-3.5" />
+                    <span>Event Diary History</span>
+                  </h4>
+                  
+                  <div className="relative border-l border-slate-200 ml-2.5 pl-4 space-y-4 pr-1">
+                    {selectedCustomer.history.map(event => {
+                      const start = event.date !== 'N/A' ? new Date(event.date) : null;
+                      const isClosed = event.status === 'CLOSED' || event.status === 'CONFIRMED';
+                      return (
+                        <div key={event._id || event.program} className="relative">
+                          {/* Circle dot on the line */}
+                          <span className="absolute -left-[22.5px] top-1.5 flex h-3 w-3 items-center justify-center rounded-full border-2 border-white bg-slate-300 ring-2 ring-slate-100" />
+                          
+                          <div className="rounded-xl border border-slate-100 bg-white p-3 hover:shadow-xs transition">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="text-xs font-bold text-slate-800 leading-tight">{event.program}</p>
+                                <p className="text-[10px] text-slate-400 font-semibold mt-1 flex items-center gap-1">
+                                  <MapPin className="w-3 h-3 text-slate-300" />
+                                  <span className="truncate">{event.place}</span>
+                                </p>
+                              </div>
+                              
+                              <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-wider ${
+                                isClosed 
+                                  ? 'bg-emerald-50 text-emerald-600 border border-emerald-100'
+                                  : 'bg-blue-50 text-blue-600 border border-blue-100'
+                              }`}>
+                                {event.status}
+                              </span>
+                            </div>
+                            
+                            <div className="mt-3.5 pt-2.5 border-t border-slate-50 flex items-center justify-between text-[10px] font-bold text-slate-400">
+                              <span className="flex items-center gap-1">
+                                <Calendar className="w-3 h-3 text-slate-300" />
+                                {start ? start.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'N/A'}
+                              </span>
+                              {event._id && (
+                                <button
+                                  onClick={() => {
+                                    setIsLedgerModalOpen(false);
+                                    router.push(`/events/${event._id}`);
+                                  }}
+                                  className="text-blue-600 hover:text-blue-700 font-extrabold underline transition cursor-pointer"
+                                >
+                                  View Details
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {selectedCustomer.history.length === 0 && (
+                      <p className="text-xs text-slate-400 font-semibold py-4 text-center">No associated booking history.</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     </AuthGuard>
   );

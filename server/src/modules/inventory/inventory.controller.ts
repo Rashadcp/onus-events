@@ -11,14 +11,8 @@ import { getItemAvailability } from '../../services/reservationEngine';
 const ItemCreateSchema = z.object({
   itemCode: z.string().min(1, 'Item code is required'),
   name: z.string().min(1, 'Name is required'),
-  department: z.enum([
-    'COUNTER_DECOR',
-    'CLOTH_DECOR',
-    'RENTAL_ITEMS',
-    'EXPENSE_CHARGES',
-    'STAFF',
-    'OUTSIDE_RENTAL'
-  ]),
+  // Accept any valid group key (built-in or custom admin-created)
+  department: z.string().min(1, 'Department/group is required').regex(/^[A-Za-z0-9_]+$/, 'Department key must be alphanumeric'),
   currentStock: z.number().nonnegative('Stock cannot be negative'),
   minimumStock: z.number().nonnegative('Minimum stock threshold cannot be negative').optional().default(5),
   rentalRate: z.number().nonnegative('Rental rate cannot be negative'),
@@ -27,8 +21,11 @@ const ItemCreateSchema = z.object({
   category: z.string().optional().default('Decorations'),
   status: z.enum(['AVAILABLE', 'RESERVED', 'LOADED', 'DISPATCHED', 'RETURNED', 'DAMAGED']).optional().default('AVAILABLE'),
   subItems: z.array(z.string()).optional(),
-  imageUrl: z.string().url().optional().or(z.literal(''))
+  imageUrl: z.string().url().optional().or(z.literal('')),
+  orderList: z.array(z.string()).optional(),
+  isActive: z.boolean().optional()
 });
+
 
 /**
  * Create a new Inventory Item (Admin Only).
@@ -81,10 +78,10 @@ export async function createItem(req: Request, res: Response) {
  */
 export async function getItems(req: Request, res: Response) {
   try {
-    const { department, search } = req.query;
-    const filter: any = { isActive: true };
+    const { department, search, startDate, endDate, includeInactive } = req.query;
+    const filter: any = includeInactive === 'true' ? {} : { isActive: true };
 
-    if (department) {
+    if (department && department !== 'All Departments') {
       filter.department = department;
     }
 
@@ -97,6 +94,33 @@ export async function getItems(req: Request, res: Response) {
     }
 
     const items = await Item.find(filter).sort({ name: 1 });
+
+    if (startDate && endDate) {
+      const start = new Date(startDate as string);
+      const end = new Date(endDate as string);
+
+      if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
+        const itemsWithAvailability = await Promise.all(
+          items.map(async (item) => {
+            const { currentStock, reservedAndDispatchedQty, availableQty } = await getItemAvailability(
+              item._id.toString(),
+              start,
+              end
+            );
+            return {
+              ...item.toObject(),
+              id: item._id.toString(),
+              currentStock,
+              reservedStock: reservedAndDispatchedQty,
+              availableStock: availableQty, // Frontend expectation
+              availableQty
+            };
+          })
+        );
+        return res.status(200).json(itemsWithAvailability);
+      }
+    }
+
     return res.status(200).json(items);
   } catch (error: any) {
     return handleControllerError(res, error);
@@ -109,7 +133,7 @@ export async function getItems(req: Request, res: Response) {
 export async function getItemByCode(req: Request, res: Response) {
   try {
     const { itemCode } = req.params;
-    const item = await Item.findOne({ itemCode: itemCode.toUpperCase(), isActive: true });
+    const item = await Item.findOne({ itemCode: itemCode.toUpperCase() });
     
     if (!item) {
       return res.status(404).json({ error: `Item ${itemCode} not found` });
@@ -134,7 +158,7 @@ export async function updateItem(req: Request, res: Response) {
       return res.status(401).json({ error: 'Unauthorized: Missing user context' });
     }
 
-    const item = await Item.findOne({ itemCode: itemCode.toUpperCase(), isActive: true });
+    const item = await Item.findOne({ itemCode: itemCode.toUpperCase() });
     if (!item) {
       return res.status(404).json({ error: `Item ${itemCode} not found` });
     }

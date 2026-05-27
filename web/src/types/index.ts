@@ -9,6 +9,7 @@ export interface User {
   email: string;
   isActive?: boolean;
   monthlyBilling?: number;
+  incentiveRate?: number;
 }
 
 export interface Item {
@@ -16,7 +17,7 @@ export interface Item {
   id?: string;
   itemCode: string;
   name: string;
-  department: 'COUNTER_DECOR' | 'CLOTH_DECOR' | 'RENTAL_ITEMS' | 'EXPENSE_CHARGES' | 'STAFF' | 'OUTSIDE_RENTAL';
+  department: string; // Flexible: built-in or custom admin group key
   currentStock: number;
   minimumStock: number;
   rentalRate: number;

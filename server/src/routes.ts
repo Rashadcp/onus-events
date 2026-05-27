@@ -25,7 +25,8 @@ import {
   recoverEvent, 
   confirmDepartment,
   updateEventStatus,
-  updateEvent
+  updateEvent,
+  getCustomers
 } from './modules/events/events.controller';
 
 // 4. Logistics Controllers
@@ -37,7 +38,13 @@ import { getRepresentativeBilling, getCaptainSchedule } from './modules/reports/
 // 6. User Management Controllers
 import { createUser, getUsers, updateUser, deleteUser } from './modules/users/users.controller';
 
-// 7. Billing Controllers
+// 7. Groups Controllers
+import { getGroups, createGroup, updateGroup, deleteGroup } from './modules/groups/groups.controller';
+
+// 8. Upload Controllers (S3 Pre-signed URLs)
+import { getPresignedUrl } from './modules/upload/upload.controller';
+
+// 9. Billing Controllers
 import {
   createBillingDocument,
   getBillingDocuments,
@@ -109,6 +116,9 @@ router.get('/inventory/logs', authGuard, roleGuard(['ADMIN']), getStockLogs);
  */
 // Retrieve all active events (All authenticated roles)
 router.get('/events', authGuard, getEvents);
+
+// Retrieve unique customer accounts (Admin & Sales Representative)
+router.get('/customers', authGuard, roleGuard(['ADMIN', 'SALES_REPRESENTATIVE']), getCustomers);
 
 // Retrieve single event details by ID (All authenticated roles)
 router.get('/events/:id', authGuard, getEventById);
@@ -190,6 +200,33 @@ router.post('/billing', authGuard, roleGuard(['ADMIN', 'SALES_REPRESENTATIVE']),
 router.post('/billing/:id/convert-to-invoice', authGuard, roleGuard(['ADMIN', 'SALES_REPRESENTATIVE']), convertQuotationToInvoice);
 
 router.get('/billing/:id/pdf', authGuard, roleGuard(['ADMIN', 'SALES_REPRESENTATIVE']), downloadBillingPdf);
+
+
+/**
+ * ==============================================================
+ *                    8. ITEM GROUPS MANAGEMENT
+ * ==============================================================
+ */
+// Get all groups (used in Create Event form - all authenticated)
+router.get('/groups', authGuard, getGroups);
+
+// Create custom group (Admin only)
+router.post('/groups', authGuard, roleGuard(['ADMIN']), createGroup);
+
+// Update group label / color / description (Admin only)
+router.put('/groups/:id', authGuard, roleGuard(['ADMIN']), updateGroup);
+
+// Delete custom group (Admin only, defaults protected)
+router.delete('/groups/:id', authGuard, roleGuard(['ADMIN']), deleteGroup);
+
+
+/**
+ * ==============================================================
+ *                    9. FILE UPLOAD (S3 PRE-SIGNED)
+ * ==============================================================
+ */
+// Request a pre-signed S3 PUT URL for direct browser-to-S3 upload (Admin only)
+router.post('/upload/presign', authGuard, roleGuard(['ADMIN']), getPresignedUrl);
 
 
 export default router;

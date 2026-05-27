@@ -12,65 +12,53 @@ import {
   Receipt, 
   Wrench, 
   Users, 
-  ShieldAlert, 
+  BadgeCheck, 
   Truck,
   LogOut,
-  Calendar,
-  List,
-  FileText,
-  Trash2,
   Menu,
-  X
+  X,
+  Layers,
+  Trash2
 } from 'lucide-react';
 
-import { Item, Event } from '../../types';
+import { Item, Event, User } from '../../types';
 import { AuthGuard } from '../../components/auth/AuthGuard';
-
-// Reusable Dashboard Feature Components
-import { FreeStockMonitor } from '../../components/dashboard/FreeStockMonitor';
-import { CustomerLedgerPanel } from '../../components/dashboard/CustomerLedgerPanel';
-import { InventoryCatalog } from '../../components/dashboard/InventoryCatalog';
-import { EventWizard } from '../../components/events/EventWizard';
-import { EventTable } from '../../components/events/EventTable';
-import { EventCalendar } from '../../components/events/EventCalendar';
-import { EventDetailsModal } from '../../components/events/EventDetailsModal';
-import { BillingWorkspace } from '../../components/billing/BillingWorkspace';
 
 // Admin-specific sub-panels
 import { AdminDashboardHome } from '../../components/admin/AdminDashboardHome';
-import { PastEventsLogs } from '../../components/admin/PastEventsLogs';
 import { RepresentativesPanel } from '../../components/admin/RepresentativesPanel';
 import { CaptainsPanel } from '../../components/admin/CaptainsPanel';
 import { LoadingStaffPanel } from '../../components/admin/LoadingStaffPanel';
-import { UserManagementPanel } from '../../components/admin/UserManagementPanel';
 import { SimpleInventory } from '../../components/admin/SimpleInventory';
-import { SimpleEvents } from '../../components/admin/SimpleEvents';
 import { DeletedEventsRecovery } from '../../components/admin/DeletedEventsRecovery';
+import SalesRepresentativeModule from '../representative/page';
 
 type TabType = 
   | 'dashboard' 
   | 'past-events' 
   | 'free-stock' 
   | 'ledgers' 
-  | 'inventory' 
-  | 'simple-inventory'
+  | 'inventory'
+  | 'deleted-events'
   | 'representatives' 
   | 'captains' 
   | 'create-event' 
-  | 'event-directory'
-  | 'simple-events'
-  | 'event-calendar'
-  | 'billing'
-  | 'loading-staff'
-  | 'user-management'
-  | 'deleted-events';
+  | 'loading-staff';
 
 export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
-  const [selectedEventDetails, setSelectedEventDetails] = useState<Event | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
   
   const { user, logout, initializeSession } = useAuthStore();
+
+  const switchTab = (tab: TabType) => {
+    setActiveTab(tab);
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.searchParams.set('tab', tab);
+      window.history.pushState(null, '', url.pathname + url.search);
+    }
+  };
 
   // Load Auth Session and read initial tab from URL query parameter
   useEffect(() => {
@@ -78,7 +66,7 @@ export default function AdminDashboard() {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       const tab = params.get('tab');
-      if (tab) {
+      if (tab && adminMenus.some((menu) => menu.id === tab)) {
         setActiveTab(tab as TabType);
       }
     }
@@ -107,9 +95,9 @@ export default function AdminDashboard() {
     { id: '3', name: 'John Doe', place: 'Calicut', contact: '9876543212', historyCount: 1 }
   ];
 
-  const activeUsers = [
-    { id: 'usr-1', username: 'akhil_sales', fullName: 'Akhil Raj', role: 'REPRESENTATIVE', email: 'akhil@onus.com', monthlyBilling: 145000 },
-    { id: 'usr-2', username: 'neeraj_rep', fullName: 'Neeraj Kumar', role: 'REPRESENTATIVE', email: 'neeraj@onus.com', monthlyBilling: 88000 },
+  const activeUsers: User[] = [
+    { id: 'usr-1', username: 'akhil_sales', fullName: 'Akhil Raj', role: 'SALES_REPRESENTATIVE', email: 'akhil@onus.com', monthlyBilling: 145000 },
+    { id: 'usr-2', username: 'neeraj_rep', fullName: 'Neeraj Kumar', role: 'SALES_REPRESENTATIVE', email: 'neeraj@onus.com', monthlyBilling: 88000 },
     { id: 'usr-3', username: 'vinu_captain', fullName: 'Vinu Captain', role: 'SITE_INCHARGE', email: 'vinu@onus.com' },
     { id: 'usr-4', username: 'sabu_loading', fullName: 'Sabu Loader', role: 'LOADING_STAFF', email: 'sabu@onus.com' }
   ];
@@ -135,19 +123,15 @@ export default function AdminDashboard() {
 
   const adminMenus: { id: TabType; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'create-event', label: 'Create Event', icon: Plus },
-    { id: 'simple-events', label: 'Upcoming Events', icon: Calendar },
+    { id: 'create-event', label: 'Create Events', icon: Plus },
     { id: 'past-events', label: 'Past Events', icon: History },
     { id: 'free-stock', label: 'Free Stock', icon: Package },
-    { id: 'billing', label: 'Quotations & Invoices', icon: FileText },
-    { id: 'simple-inventory', label: 'Inventory', icon: Wrench },
-    { id: 'ledgers', label: 'Customer Accounts', icon: Receipt },
-    { id: 'user-management', label: 'User Directory', icon: Users },
+    { id: 'ledgers', label: 'Ledgers / Customer A/C', icon: Receipt },
+    { id: 'inventory', label: 'Inventory', icon: Wrench },
     { id: 'representatives', label: 'Representatives', icon: Users },
-    { id: 'captains', label: 'Captains / Incharges', icon: ShieldAlert },
-    { id: 'loading-staff', label: 'Loading Staff Log', icon: Truck },
-    { id: 'event-calendar', label: 'Event Calendar', icon: List },
-    { id: 'deleted-events', label: 'Deleted Events Logs', icon: Trash2 },
+    { id: 'captains', label: 'Captains', icon: BadgeCheck },
+    { id: 'loading-staff', label: 'Loading Staff', icon: Truck },
+    { id: 'deleted-events', label: 'Deleted Events', icon: Trash2 },
   ];
 
   return (
@@ -160,7 +144,7 @@ export default function AdminDashboard() {
                 <Menu className="h-5 w-5" />
               </button>
               <div>
-                <h1 className="text-lg font-semibold">Window 0 - Admin Console</h1>
+                <h1 className="text-lg font-semibold"> Admin Console</h1>
                 <p className="text-xs text-slate-500">ONUS Event Rental ERP</p>
               </div>
             </div>
@@ -198,7 +182,7 @@ export default function AdminDashboard() {
                   <button
                     key={tab.id}
                     onClick={() => {
-                      setActiveTab(tab.id);
+                      switchTab(tab.id);
                       setMobileOpen(false);
                     }}
                     className={`flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm font-medium ${
@@ -213,7 +197,7 @@ export default function AdminDashboard() {
             </nav>
           </aside>
 
-          <main className="w-full p-4 lg:p-6">
+          <main className="w-full p-4 lg:p-6 print:hidden">
             <div className="mx-auto max-w-7xl">
             
             {/* TAB Routing Content Panel */}
@@ -226,30 +210,23 @@ export default function AdminDashboard() {
             )}
 
             {activeTab === 'past-events' && (
-              <PastEventsLogs initialEvents={activeEvents} />
+              <SalesRepresentativeModule initialTab="past-events" hideLayout={true} />
             )}
 
             {activeTab === 'free-stock' && (
-              <FreeStockMonitor initialItems={activeItems} />
+              <SalesRepresentativeModule initialTab="free-stock" hideLayout={true} />
             )}
 
             {activeTab === 'ledgers' && (
-              <CustomerLedgerPanel 
-                initialCustomers={mockCustomers} 
-                initialEvents={activeEvents} 
-              />
+              <SalesRepresentativeModule initialTab="customer-accounts" hideLayout={true} />
             )}
 
             {activeTab === 'inventory' && (
-              <InventoryCatalog isAdmin={true} initialItems={activeItems} />
-            )}
-
-            {activeTab === 'simple-inventory' && (
               <SimpleInventory />
             )}
 
-            {activeTab === 'billing' && (
-              <BillingWorkspace initialItems={activeItems} initialEvents={activeEvents} />
+            {activeTab === 'deleted-events' && (
+              <DeletedEventsRecovery />
             )}
 
             {activeTab === 'representatives' && (
@@ -261,56 +238,16 @@ export default function AdminDashboard() {
             )}
 
             {activeTab === 'create-event' && (
-              <EventWizard 
-                initialItems={activeItems} 
-                onComplete={() => setActiveTab('simple-events')} 
-              />
-            )}
-
-            {activeTab === 'event-directory' && (
-              <EventTable 
-                events={eventsData.length > 0 ? eventsData : activeEvents} 
-                onViewDetails={(event) => setSelectedEventDetails(event)} 
-              />
-            )}
-
-            {activeTab === 'simple-events' && (
-              <SimpleEvents />
-            )}
-
-            {activeTab === 'event-calendar' && (
-              <EventCalendar 
-                events={eventsData.length > 0 ? eventsData : activeEvents} 
-                onEventClick={(event) => setSelectedEventDetails(event)} 
-              />
+              <SalesRepresentativeModule initialTab="create-event" hideLayout={true} />
             )}
 
             {activeTab === 'loading-staff' && (
               <LoadingStaffPanel initialUsers={activeUsers} />
             )}
 
-            {activeTab === 'user-management' && (
-              <UserManagementPanel />
-            )}
-
-            {activeTab === 'deleted-events' && (
-              <DeletedEventsRecovery />
-            )}
-
             </div>
           </main>
         </div>
-        
-        <EventDetailsModal 
-          isOpen={!!selectedEventDetails} 
-          onClose={() => setSelectedEventDetails(null)} 
-          event={selectedEventDetails}
-          isAdmin={true}
-          onPrint={(event) => {
-            // Directly triggers browser print on the event detail view
-            window.print();
-          }}
-        />
       </div>
     </AuthGuard>
   );
