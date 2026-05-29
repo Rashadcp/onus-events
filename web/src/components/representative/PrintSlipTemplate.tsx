@@ -114,7 +114,7 @@ export function PrintSlipTemplate({
       <div className="print-header text-center mb-6">
         <img src="/logo.png" alt="Onus Events" className="h-14 mx-auto mb-2" />
         <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mt-1">Order Billing & Slip</p>
-        <p className="text-[10px] text-slate-400 mt-0.5 font-bold">Ph: +91 95627 03957 | Email: office@onusevent.com</p>
+        <p className="text-[10px] text-slate-400 mt-0.5 font-bold">Email: office@onusevent.com</p>
       </div>
 
       <div className="print-details border-t border-b border-slate-200 py-3 mb-4 grid grid-cols-2 gap-4 text-xs font-semibold">

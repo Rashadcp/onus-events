@@ -1,4 +1,4 @@
-import { apiFetch } from '../utils/apiClient';
+import { apiFetch, apiClient } from '../utils/apiClient';
 import { BillingDocument, BillingLineItem, Item, Event, User } from '../types';
 
 interface CreateBillingDocumentPayload {
@@ -42,7 +42,7 @@ export const registerStaffApi = (payload: Partial<User> & { password?: string })
 };
 
 // 2. Inventory Services
-export const getInventoryApi = (params?: { department?: string; search?: string; startDate?: string; endDate?: string; includeInactive?: boolean } | any): Promise<Item[]> => {
+export const getInventoryApi = (params?: { department?: string; search?: string; startDate?: string; endDate?: string; includeInactive?: boolean; excludeEventId?: string } | any): Promise<Item[]> => {
   const query = new URLSearchParams();
   if (params && !params.queryKey) {
     if (params.department) query.set('department', params.department);
@@ -50,6 +50,7 @@ export const getInventoryApi = (params?: { department?: string; search?: string;
     if (params.startDate) query.set('startDate', params.startDate);
     if (params.endDate) query.set('endDate', params.endDate);
     if (params.includeInactive) query.set('includeInactive', 'true');
+    if (params.excludeEventId) query.set('excludeEventId', params.excludeEventId);
   }
   
   const queryString = query.toString();
@@ -81,6 +82,14 @@ export const linkSubItemsApi = (itemCode: string, subItemCodes: string[]) => {
     method: 'POST',
     body: JSON.stringify({ subItemCodes })
   });
+};
+
+export const checkItemAvailabilityApi = (itemId: string, startDate: string, endDate: string): Promise<any> => {
+  return apiFetch(`/api/inventory/${itemId}/availability?startDate=${startDate}&endDate=${endDate}`);
+};
+
+export const getStockLogsApi = (): Promise<any[]> => {
+  return apiFetch('/api/inventory/logs');
 };
 
 // 3. Event Booking Services
@@ -170,6 +179,18 @@ export const convertQuotationToInvoiceApi = (quotationId: string): Promise<Billi
   });
 };
 
+export const downloadBillingPdfApi = (documentId: string, copyType: string) => {
+  return apiClient.get(`/api/billing/${documentId}/pdf?copyType=${copyType}`, {
+    responseType: 'blob'
+  });
+};
+
+export const getBillingDocumentByIdApi = (id: string): Promise<BillingDocument> => {
+  return apiFetch(`/api/billing/${id}`);
+};
+
+
+
 // 5. Logistics Services
 export const getLogisticsLogApi = (eventId: string): Promise<any> => {
   return apiFetch(`/api/logistics/${eventId}`);
@@ -221,6 +242,46 @@ export const updateGroupApi = (id: string, payload: Partial<{ label: string; des
 export const deleteGroupApi = (id: string): Promise<{ message: string }> => {
   return apiFetch(`/api/groups/${id}`, {
     method: 'DELETE'
+  });
+};
+
+// 8. User Management Services
+export const getUsersApi = (role?: string): Promise<User[]> => {
+  const query = role ? `?role=${role}` : '';
+  return apiFetch(`/api/users${query}`);
+};
+
+export const createUserApi = (data: unknown): Promise<User> => {
+  return apiFetch('/api/users', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  });
+};
+
+export const updateUserApi = (id: string, data: any): Promise<User> => {
+  return apiFetch(`/api/users/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data)
+  });
+};
+
+export const deleteUserApi = (id: string): Promise<{ message: string }> => {
+  return apiFetch(`/api/users/${id}`, {
+    method: 'DELETE'
+  });
+};
+
+// 9. Upload Services
+export interface PresignResponse {
+  uploadUrl: string;
+  publicUrl: string;
+  key: string;
+}
+
+export const getS3PresignUrlApi = (payload: { fileName: string; contentType: string; folder: string }): Promise<PresignResponse> => {
+  return apiFetch('/api/upload/presign', {
+    method: 'POST',
+    body: JSON.stringify(payload)
   });
 };
 

@@ -9,7 +9,14 @@ import { Modal } from '../ui/Modal';
 import { Alert } from '../ui/Alert';
 import { SectionHeader } from '../ui/SectionHeader';
 import { Item } from '../../types';
-import { apiClient } from '../../utils/apiClient';
+import { 
+  getInventoryApi, 
+  getStockLogsApi, 
+  createItemApi, 
+  updateItemApi, 
+  deleteItemApi, 
+  linkSubItemsApi 
+} from '../../services/api';
 import { useInventoryWebSocket } from '../../hooks/useWebSocket';
 
 interface InventoryCatalogProps {
@@ -75,20 +82,14 @@ export function InventoryCatalog({
   // Query: Fetch Inventory Catalog
   const { data: inventoryData = [], isLoading } = useQuery<Item[]>({
     queryKey: ['inventory'],
-    queryFn: async () => {
-      const res = await apiClient.get('/api/inventory');
-      return res.data;
-    },
+    queryFn: () => getInventoryApi(),
     placeholderData: initialItems
   });
 
   // Query: Fetch Stock Logs (Admin Only)
   const { data: stockLogs = [] } = useQuery<any[]>({
     queryKey: ['stockLogs'],
-    queryFn: async () => {
-      const res = await apiClient.get('/api/inventory/logs');
-      return res.data;
-    },
+    queryFn: () => getStockLogsApi(),
     placeholderData: [],
     enabled: isAdmin
   });
@@ -97,10 +98,7 @@ export function InventoryCatalog({
 
   // Mutation: Create catalog item
   const createItemMutation = useMutation({
-    mutationFn: async (payload: any) => {
-      const res = await apiClient.post('/api/inventory', payload);
-      return res.data;
-    },
+    mutationFn: (payload: any) => createItemApi(payload),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['inventory'] });
       queryClient.invalidateQueries({ queryKey: ['stockLogs'] });
@@ -117,10 +115,7 @@ export function InventoryCatalog({
 
   // Mutation: Update catalog item
   const updateItemMutation = useMutation({
-    mutationFn: async ({ itemCode, payload }: { itemCode: string; payload: any }) => {
-      const res = await apiClient.put(`/api/inventory/${itemCode}`, payload);
-      return res.data;
-    },
+    mutationFn: ({ itemCode, payload }: { itemCode: string; payload: any }) => updateItemApi(itemCode, payload),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['inventory'] });
       queryClient.invalidateQueries({ queryKey: ['stockLogs'] });
@@ -136,10 +131,7 @@ export function InventoryCatalog({
 
   // Mutation: Soft-disable catalog item
   const deleteItemMutation = useMutation({
-    mutationFn: async (itemCode: string) => {
-      const res = await apiClient.delete(`/api/inventory/${itemCode}`);
-      return res.data;
-    },
+    mutationFn: (itemCode: string) => deleteItemApi(itemCode),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['inventory'] });
       queryClient.invalidateQueries({ queryKey: ['stockLogs'] });
@@ -153,10 +145,7 @@ export function InventoryCatalog({
 
   // Mutation: Link subitems
   const saveSubitemsMutation = useMutation({
-    mutationFn: async ({ itemCode, codes }: { itemCode: string; codes: string[] }) => {
-      const res = await apiClient.post(`/api/inventory/${itemCode}/sub-items`, { subItemCodes: codes });
-      return res.data;
-    },
+    mutationFn: ({ itemCode, codes }: { itemCode: string; codes: string[] }) => linkSubItemsApi(itemCode, codes),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['inventory'] });
       setMessage('Sub-item grouping linked successfully!');

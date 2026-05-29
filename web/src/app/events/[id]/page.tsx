@@ -8,9 +8,9 @@ import {
   getEventByIdApi, 
   updateEventApi, 
   deleteEventApi,
-  getInventoryApi 
+  getInventoryApi,
+  checkItemAvailabilityApi
 } from '../../../services/api';
-import { apiClient } from '../../../utils/apiClient';
 import { AuthGuard } from '../../../components/auth/AuthGuard';
 
 // Icons
@@ -197,7 +197,7 @@ export default function EventDetailsPage() {
     try {
       const startIso = new Date(`${startDate}T${startTime}`).toISOString();
       const endIso = new Date(`${endDate}T${endTime}`).toISOString();
-      const res = await apiClient.get(`/api/inventory/${selectedItemId}/availability?startDate=${startIso}&endDate=${endIso}`);
+      const res = await checkItemAvailabilityApi(selectedItemId, startIso, endIso);
       setAvailableStock(res.data.availableQty);
     } catch {
       if (selectedItemObj) setAvailableStock(selectedItemObj.currentStock);

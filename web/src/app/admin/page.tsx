@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '../../store/useAuthStore';
 import { getInventoryApi, getEventsApi } from '../../services/api';
-import { getUsers } from '../../utils/apiClient';
+import { getUsersApi } from '../../services/api';
 import { 
   Plus, 
   LayoutDashboard, 
@@ -92,7 +92,7 @@ export default function AdminDashboard() {
   // Load real users from database
   const { data: usersData = [] } = useQuery<User[]>({
     queryKey: ['users'],
-    queryFn: () => getUsers(),
+    queryFn: () => getUsersApi(),
     placeholderData: []
   });
 

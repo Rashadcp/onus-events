@@ -9,8 +9,10 @@ import { Button } from '../ui/Button';
 import { Alert } from '../ui/Alert';
 import { Modal } from '../ui/Modal';
 import { SectionHeader } from '../ui/SectionHeader';
-import { createUser, getUsers, updateUser, apiFetch } from '../../utils/apiClient';
+import { createUserApi, getUsersApi, updateUserApi, deleteUserApi } from '../../services/api';
+import { apiFetch } from '../../utils/apiClient';
 import { User } from '../../types';
+import hotToast from 'react-hot-toast';
 
 export function UserManagementPanel() {
   const queryClient = useQueryClient();
@@ -44,7 +46,7 @@ export function UserManagementPanel() {
   // Query: Fetch all users
   const { data: allUsers = [], isLoading } = useQuery<User[]>({
     queryKey: ['users'],
-    queryFn: () => getUsers(),
+    queryFn: () => getUsersApi(),
     placeholderData: []
   });
 
@@ -62,11 +64,11 @@ export function UserManagementPanel() {
   // Mutation: Register a new user
   const registerMutation = useMutation({
     mutationFn: async (payload: any) => {
-      return createUser(payload);
+      return createUserApi(payload);
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
-      showToast(`User ${data.user.name} created successfully!`);
+      showToast(`User ${data.fullName || data.email} created successfully!`);
       setErrorMessage(null);
       setIsCreateModalOpen(false);
       resetCreateForm();
@@ -80,7 +82,7 @@ export function UserManagementPanel() {
   // Mutation: Update existing user details
   const updateMutation = useMutation({
     mutationFn: async ({ id, payload }: { id: string; payload: any }) => {
-      return updateUser(id, payload);
+      return updateUserApi(id, payload);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
@@ -93,13 +95,10 @@ export function UserManagementPanel() {
     }
   });
 
-  // Mutation: Soft-disable or delete user
   const deleteMutation = useMutation({
     mutationFn: async ({ id, hardDelete }: { id: string; hardDelete?: boolean }) => {
-      const query = hardDelete ? '?hardDelete=true' : '';
-      return apiFetch(`/api/users/${id}${query}`, {
-        method: 'DELETE'
-      });
+      // The backend API deletes users. If hardDelete is needed, it can be added to deleteUserApi later.
+      return deleteUserApi(id);
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
@@ -203,9 +202,32 @@ export function UserManagementPanel() {
   const handleDelete = (user: User) => {
     const id = (user.id || user._id) as string;
     const name = user.name || user.fullName || 'User';
-    if (confirm(`Are you sure you want to delete ${name}?`)) {
-      deleteMutation.mutate({ id, hardDelete: false });
-    }
+    
+    hotToast(
+      (t) => (
+        <div className="flex flex-col gap-3">
+          <p className="font-semibold text-slate-800">Are you sure you want to delete {name}?</p>
+          <div className="flex gap-2 justify-end">
+            <Button
+              variant="secondary"
+              onClick={() => hotToast.dismiss(t.id)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              onClick={() => {
+                deleteMutation.mutate({ id, hardDelete: false });
+                hotToast.dismiss(t.id);
+              }}
+            >
+              Delete
+            </Button>
+          </div>
+        </div>
+      ),
+      { duration: Infinity }
+    );
   };
 
   // Filter and Search Logic
@@ -219,7 +241,7 @@ export function UserManagementPanel() {
       phoneStr.includes(searchTerm.toLowerCase());
 
     const matchesRole = roleFilter === 'ALL' || user.role === roleFilter;
-    
+
     const userActive = user.isActive !== false;
     const matchesStatus =
       statusFilter === 'ALL' ||
@@ -261,16 +283,14 @@ export function UserManagementPanel() {
       {toast && (
         <div className="fixed right-5 top-5 z-[150] w-[min(360px,calc(100vw-2.5rem))]">
           <div
-            className={`flex items-start gap-3 rounded-lg border bg-white px-4 py-3 shadow-xl shadow-slate-900/10 ${
-              toast.type === 'success'
+            className={`flex items-start gap-3 rounded-lg border bg-white px-4 py-3 shadow-xl shadow-slate-900/10 ${toast.type === 'success'
                 ? 'border-emerald-200 text-emerald-800'
                 : 'border-red-200 text-red-800'
-            }`}
+              }`}
           >
             <div
-              className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${
-                toast.type === 'success' ? 'bg-emerald-50' : 'bg-red-50'
-              }`}
+              className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${toast.type === 'success' ? 'bg-emerald-50' : 'bg-red-50'
+                }`}
             >
               {toast.type === 'success' ? <CheckCircle className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
             </div>
@@ -307,7 +327,7 @@ export function UserManagementPanel() {
             }}
           />
         </div>
-        
+
         <div>
           <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1">Role Filter</label>
           <select
@@ -412,11 +432,10 @@ export function UserManagementPanel() {
                       type="button"
                       onClick={() => toggleUserStatus(user)}
                       disabled={updateMutation.isPending}
-                      className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border shadow-sm shadow-slate-900/5 transition focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:cursor-not-allowed disabled:opacity-60 ${
-                        isActive
+                      className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border shadow-sm shadow-slate-900/5 transition focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:cursor-not-allowed disabled:opacity-60 ${isActive
                           ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
                           : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
-                      }`}
+                        }`}
                       title={isActive ? 'Suspend user' : 'Activate user'}
                       aria-label={isActive ? 'Suspend user' : 'Activate user'}
                     >
@@ -482,7 +501,7 @@ export function UserManagementPanel() {
           <Input label="Email Address" type="email" placeholder="john@onus-event.com" value={newEmail} onChange={(e: any) => setNewEmail(e.target.value)} required />
           <Input label="Phone Number" placeholder="9876543210" value={newPhone} onChange={(e: any) => setNewPhone(e.target.value)} required />
           <Input label="Initial Password" placeholder="Password (min 6 characters)" value={newPassword} onChange={(e: any) => setNewPassword(e.target.value)} required />
-          
+
           <div className="flex flex-col gap-2">
             <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Assign Organization Role</label>
             <select

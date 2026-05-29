@@ -4,8 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '../../store/useAuthStore';
-import { getInventoryApi } from '../../services/api';
-import { apiClient } from '../../utils/apiClient';
+import { getInventoryApi, checkItemAvailabilityApi } from '../../services/api';
 import { AuthGuard } from '../../components/auth/AuthGuard';
 
 // Icons
@@ -80,7 +79,7 @@ export default function FreeStockAvailabilityPage() {
       await Promise.all(
         inventory.map(async (item: any) => {
           try {
-            const res = await apiClient.get(`/api/inventory/${item._id}/availability?startDate=${startIso}&endDate=${endIso}`);
+            const res = await checkItemAvailabilityApi(item._id, startIso, endIso);
             map[item._id] = {
               available: res.data.availableQty,
               reserved: res.data.reservedAndDispatchedQty

@@ -26,6 +26,8 @@ export default function LoginPage() {
         window.location.href = '/representative';
       } else if (user.role === 'LOADING_STAFF') {
         window.location.href = '/logistics';
+      } else if (user.role === 'SITE_INCHARGE' || user.role === 'CAPTAIN') {
+        window.location.href = '/site-incharge';
       } else {
         window.location.href = '/schedule';
       }
@@ -54,6 +56,8 @@ export default function LoginPage() {
         window.location.href = '/representative';
       } else if (role === 'LOADING_STAFF') {
         window.location.href = '/logistics';
+      } else if (role === 'SITE_INCHARGE' || role === 'CAPTAIN') {
+        window.location.href = '/site-incharge';
       } else {
         window.location.href = '/schedule';
       }

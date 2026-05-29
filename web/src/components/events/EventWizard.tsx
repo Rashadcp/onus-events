@@ -8,8 +8,7 @@ import { Button } from '../ui/Button';
 import { Alert } from '../ui/Alert';
 import { SectionHeader } from '../ui/SectionHeader';
 import { TimeSetModal } from '../ui/TimeSetModal';
-import { apiClient } from '../../utils/apiClient';
-import { createEventApi } from '../../services/api';
+import { createEventApi, getInventoryApi, checkItemAvailabilityApi } from '../../services/api';
 
 interface EventWizardProps {
   initialItems?: any[];
@@ -38,10 +37,7 @@ export function EventWizard({ initialItems = [], onComplete }: EventWizardProps)
   // Fetch Inventory items for selection
   const { data: inventoryData = [] } = useQuery({
     queryKey: ['inventory'],
-    queryFn: async () => {
-      const res = await apiClient.get('/api/inventory');
-      return res.data;
-    },
+    queryFn: () => getInventoryApi(),
     placeholderData: initialItems
   });
 
@@ -58,7 +54,7 @@ export function EventWizard({ initialItems = [], onComplete }: EventWizardProps)
       await Promise.all(
         activeItems.map(async (item: any) => {
           try {
-            const res = await apiClient.get(`/api/inventory/${item._id}/availability?startDate=${start}&endDate=${end}`);
+            const res = await checkItemAvailabilityApi(item._id, start, end);
             map[item._id] = res.data.availableQty;
           } catch (err) {
             map[item._id] = item.currentStock;

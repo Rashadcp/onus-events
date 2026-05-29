@@ -6,7 +6,7 @@ import { Card } from '../ui/Card';
 import { Input } from '../ui/Input';
 import { Button } from '../ui/Button';
 import { Modal } from '../ui/Modal';
-import { getUsers, updateUser, deleteUser, apiFetch } from '../../utils/apiClient';
+import { getUsersApi, updateUserApi, deleteUserApi, createUserApi, registerStaffApi } from '../../services/api';
 import { toast } from 'react-hot-toast';
 
 interface UserManagementTableProps {
@@ -36,18 +36,19 @@ export function UserManagementTable({ role, roleDisplayName, initialUsers = [], 
   // Queries
   const { data: users = initialUsers } = useQuery({
     queryKey: ['users', role],
-    queryFn: () => getUsers(role),
+    queryFn: () => getUsersApi(role),
     initialData: initialUsers.filter(u => u.role === role)
   });
 
   // Mutations
   const registerMutation = useMutation({
     mutationFn: async (payload: any) => {
-      // Direct apiFetch for register as it's under auth
-      return apiFetch('/api/auth/register', {
-        method: 'POST',
-        body: JSON.stringify(payload),
-        headers: { 'Content-Type': 'application/json' }
+      return registerStaffApi({
+        email: newStaffEmail,
+        fullName: newStaffName,
+        password: newStaffPass,
+        role: role === 'SITE_INCHARGE' ? 'CAPTAIN' : role,
+        phone: newStaffUser
       });
     },
     onSuccess: (data) => {
@@ -62,9 +63,7 @@ export function UserManagementTable({ role, roleDisplayName, initialUsers = [], 
   });
 
   const updateMutation = useMutation({
-    mutationFn: async ({ id, payload }: { id: string, payload: any }) => {
-      return updateUser(id, payload);
-    },
+    mutationFn: ({ id, payload }: { id: string; payload: any }) => updateUserApi(id, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
       toast.success(`${roleDisplayName} details updated successfully!`);
@@ -75,16 +74,14 @@ export function UserManagementTable({ role, roleDisplayName, initialUsers = [], 
     }
   });
 
-  const disableMutation = useMutation({
-    mutationFn: async (id: string) => {
-      return deleteUser(id);
-    },
+  const deleteUserMutation = useMutation({
+    mutationFn: (id: string) => deleteUserApi(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
-      toast.success(`${roleDisplayName} disabled successfully!`);
+      toast.success(`${roleDisplayName} deleted successfully!`);
     },
     onError: (err: any) => {
-      toast.error(err.message || 'Failed to disable user.');
+      toast.error(err.message || 'Failed to delete user.');
     }
   });
 
@@ -99,6 +96,11 @@ export function UserManagementTable({ role, roleDisplayName, initialUsers = [], 
     e.preventDefault();
     if (!newStaffUser || !newStaffName || !newStaffEmail) {
       toast.error('Please fill all required fields.');
+      return;
+    }
+    
+    if (newStaffUser.trim().length < 5) {
+      toast.error('Username / Phone must be at least 5 characters.');
       return;
     }
     
@@ -134,10 +136,35 @@ export function UserManagementTable({ role, roleDisplayName, initialUsers = [], 
     updateMutation.mutate({ id: editingUser.id || editingUser._id, payload });
   };
 
-  const handleDisable = (user: any) => {
-    if (confirm(`Are you sure you want to disable ${user.fullName || user.name}?`)) {
-      disableMutation.mutate(user.id || user._id);
-    }
+  const handleDeleteUser = (user: any) => {
+    const id = user.id || user._id;
+    const name = user.fullName || user.name;
+    
+    toast.custom(
+      (t) => (
+        <div className="flex flex-col gap-3 p-4 bg-white rounded-lg shadow-lg border border-slate-100 min-w-[300px]">
+          <p className="font-semibold text-slate-800 text-sm">⚠️ Are you sure you want to delete the user "{name}"? This action cannot be undone.</p>
+          <div className="flex gap-2 justify-end">
+            <Button
+              variant="secondary"
+              onClick={() => toast.dismiss(t.id)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              onClick={() => {
+                deleteUserMutation.mutate(id);
+                toast.dismiss(t.id);
+              }}
+            >
+              Delete User
+            </Button>
+          </div>
+        </div>
+      ),
+      { duration: Infinity }
+    );
   };
 
   // Only show active users if isActive exists, otherwise show all (for mocked initial data)
@@ -183,8 +210,8 @@ export function UserManagementTable({ role, roleDisplayName, initialUsers = [], 
                   <Button variant="secondary" onClick={() => openEditModal(user)} className="px-3 py-1 text-xs">
                     Edit
                   </Button>
-                  <Button variant="danger" onClick={() => handleDisable(user)} className="px-3 py-1 text-xs bg-red-50 text-red-600 border border-red-100 hover:bg-red-100">
-                    Disable
+                  <Button variant="danger" onClick={() => handleDeleteUser(user)} className="px-3 py-1 text-xs bg-red-50 text-red-650 border border-red-100 hover:bg-red-100">
+                    Delete
                   </Button>
                 </div>
               </div>
@@ -204,7 +231,7 @@ export function UserManagementTable({ role, roleDisplayName, initialUsers = [], 
         onClose={() => setIsRegModalOpen(false)}
       >
         <form onSubmit={handleRegisterSubmit} className="flex flex-col gap-4">
-          <Input label="Username" placeholder={`new_${role.toLowerCase()}`} value={newStaffUser} onChange={(e: any) => setNewStaffUser(e.target.value)} required />
+          <Input label="Username / Phone (Min 5 chars)" placeholder={`new_${role.toLowerCase()}`} value={newStaffUser} onChange={(e: any) => setNewStaffUser(e.target.value)} required />
           <Input label="Full Name" placeholder="Full Name" value={newStaffName} onChange={(e: any) => setNewStaffName(e.target.value)} required />
           <Input label="Email Address" type="email" placeholder="email@onus.com" value={newStaffEmail} onChange={(e: any) => setNewStaffEmail(e.target.value)} required />
           <Input label="Password" type="text" placeholder="Initial Password" value={newStaffPass} onChange={(e: any) => setNewStaffPass(e.target.value)} required />

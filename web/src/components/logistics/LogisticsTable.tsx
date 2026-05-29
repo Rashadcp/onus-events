@@ -50,8 +50,8 @@ export function LogisticsTable({
           >
             {isEditingMode ? (
               <>
-                <Lock className="w-3.5 h-3.5" />
-                Lock Quantities
+             
+               save
               </>
             ) : (
               <>

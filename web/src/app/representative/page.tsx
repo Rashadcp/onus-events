@@ -48,6 +48,7 @@ import {
 } from '../../services/api';
 import { useAuthStore } from '../../store/useAuthStore';
 import { Item, Event } from '../../types';
+import { toast } from 'react-hot-toast';
 
 export default function SalesRepresentativeModule({
   initialTab,
@@ -101,7 +102,6 @@ export default function SalesRepresentativeModule({
   const [freeStockSearch, setFreeStockSearch] = useState('');
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
   const [selectedViewEvent, setSelectedViewEvent] = useState<Event | null>(null);
-  const [isSetupTimeModalOpen, setIsSetupTimeModalOpen] = useState(false);
 
   // Customer accounts State
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
@@ -154,8 +154,12 @@ export default function SalesRepresentativeModule({
   const editEventEnd = currentEditingEvent?.eventDate?.end ? new Date(currentEditingEvent.eventDate.end).toISOString() : '';
 
   const { data: inventoryWithAvailability = [] } = useQuery({
-    queryKey: ['inventory-availability', editEventStart, editEventEnd],
-    queryFn: () => getInventoryApi({ startDate: editEventStart, endDate: editEventEnd }),
+    queryKey: ['inventory-availability', editEventStart, editEventEnd, currentEditingEvent?._id],
+    queryFn: () => getInventoryApi({ 
+      startDate: editEventStart, 
+      endDate: editEventEnd,
+      excludeEventId: currentEditingEvent?._id 
+    }),
     enabled: !!editEventStart && !!editEventEnd
   });
 
@@ -273,26 +277,6 @@ export default function SalesRepresentativeModule({
     return timeStr;
   };
 
-  const openSetupTimeModal = () => {
-    if (!currentEditingEvent) return;
-
-    setIsSetupTimeModalOpen(true);
-  };
-
-  const handleSetupTimeSave = (start: string, end: string) => {
-    if (!currentEditingEvent) return;
-
-    const newConfirmations = { ...currentEditingEvent.confirmations };
-    Object.keys(newConfirmations).forEach((key) => {
-      newConfirmations[key] = { ...newConfirmations[key], confirmed: false };
-    });
-
-    setCurrentEditingEvent({
-      ...currentEditingEvent,
-      timeWindow: { start, end },
-      confirmations: newConfirmations
-    });
-  };
 
   useEffect(() => {
     if (activeMenu !== 'create-event' || currentEditingEvent) return;
@@ -566,39 +550,97 @@ export default function SalesRepresentativeModule({
       }
     });
 
-    if (shortages.length > 0) {
-      const confirmProceed = window.confirm(
-        `⚠️ Inventory Shortage Warning:\n\n` +
-        `The requested quantity exceeds the available stock for the following items:\n` +
-        shortages.map(s => `- ${s}`).join('\n') +
-        `\n\nDo you still want to proceed with reserving these items anyway?`
-      );
-      if (!confirmProceed) return;
-    } else if (sufficientStockItems.length > 0) {
-      // Satisfy "If quantity is less than stock, show confirmation/alert"
-      const confirmProceed = window.confirm(
-        `✅ Stock Level Verification:\n\n` +
-        `All selected items are fully in stock and reserved quantities are below available limits!\n\n` +
-        `Are you sure you want to lock these reservations and save the event details?`
-      );
-      if (!confirmProceed) return;
-    }
-    
-    const payload = {
-      customerName: currentEditingEvent.customerName,
-      eventDate: currentEditingEvent.eventDate,
-      timeWindow: currentEditingEvent.timeWindow || { start: '09:00', end: '18:00' },
-      place: currentEditingEvent.place || 'Main Venue',
-      program: currentEditingEvent.program || 'General',
-      items: validItems.map(i => ({ itemId: i.itemId, quantity: i.quantity })),
-      eventStatus: currentEditingEvent.eventStatus || 'INQUIRY'
+    const executeSave = () => {
+      const payload = {
+        customerName: currentEditingEvent.customerName,
+        eventDate: currentEditingEvent.eventDate,
+        timeWindow: currentEditingEvent.timeWindow || { start: '09:00', end: '18:00' },
+        place: currentEditingEvent.place || 'Main Venue',
+        program: currentEditingEvent.program || 'General',
+        items: validItems.map(i => ({ itemId: i.itemId, quantity: i.quantity })),
+        eventStatus: currentEditingEvent.eventStatus || 'INQUIRY'
+      };
+
+      if (currentEditingEvent._id) {
+        updateEventMutation.mutate({ id: currentEditingEvent._id, payload });
+      } else {
+        createEventMutation.mutate(payload);
+      }
     };
 
-    if (currentEditingEvent._id) {
-      updateEventMutation.mutate({ id: currentEditingEvent._id, payload });
-    } else {
-      createEventMutation.mutate(payload);
+    if (shortages.length > 0) {
+      toast(
+        (t) => (
+          <div className="flex flex-col gap-3 p-1 max-w-sm">
+            <div className="flex items-center gap-2 text-amber-600 font-bold">
+              <AlertCircle className="w-5 h-5" /> 
+              <span>Inventory Shortage Warning</span>
+            </div>
+            <div className="text-sm text-gray-700">
+              The requested quantity exceeds the available stock for the following items:
+            </div>
+            <ul className="text-xs text-gray-600 list-disc pl-4 flex flex-col gap-1 max-h-32 overflow-y-auto">
+              {shortages.map((s, idx) => <li key={idx}>{s}</li>)}
+            </ul>
+            <div className="text-sm font-semibold text-gray-800 mt-1">
+              Do you still want to proceed with reserving these items anyway?
+            </div>
+            <div className="flex justify-end gap-2 mt-2">
+              <button 
+                onClick={() => { toast.dismiss(t.id); executeSave(); }}
+                className="px-4 py-2 bg-blue-600 text-white text-xs font-bold rounded-lg hover:bg-blue-700 transition"
+              >
+                Yes, Proceed
+              </button>
+              <button 
+                onClick={() => toast.dismiss(t.id)}
+                className="px-4 py-2 bg-gray-200 text-gray-800 text-xs font-bold rounded-lg hover:bg-gray-300 transition"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ),
+        { duration: Infinity, style: { maxWidth: '450px' } }
+      );
+      return;
+    } else if (sufficientStockItems.length > 0) {
+      toast(
+        (t) => (
+          <div className="flex flex-col gap-3 p-1 max-w-sm">
+            <div className="flex items-center gap-2 text-emerald-600 font-bold">
+              <CheckCircle2 className="w-5 h-5" /> 
+              <span>Stock Level Verification</span>
+            </div>
+            <div className="text-sm text-gray-700">
+              All selected items are fully in stock and reserved quantities are below available limits!
+            </div>
+            <div className="text-sm font-semibold text-gray-800 mt-1">
+              Are you sure you want to lock these reservations and save the event details?
+            </div>
+            <div className="flex justify-end gap-2 mt-2">
+              <button 
+                onClick={() => { toast.dismiss(t.id); executeSave(); }}
+                className="px-4 py-2 bg-blue-600 text-white text-xs font-bold rounded-lg hover:bg-blue-700 transition"
+              >
+                Yes, Lock & Save
+              </button>
+              <button 
+                onClick={() => toast.dismiss(t.id)}
+                className="px-4 py-2 bg-gray-200 text-gray-800 text-xs font-bold rounded-lg hover:bg-gray-300 transition"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ),
+        { duration: Infinity, style: { maxWidth: '450px' } }
+      );
+      return;
     }
+    
+    // Execute save if no items were added or no confirm blocks matched
+    executeSave();
   };
 
   // Printing Filter calculations
@@ -877,50 +919,37 @@ export default function SalesRepresentativeModule({
                         />
                       </Field>
                       <Field label="Setup Time Window">
-                        <div className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
-                          <div className="grid gap-3 md:grid-cols-[1fr_auto]">
-                            <div className="grid gap-3 sm:grid-cols-2">
-                              <TextInput
-                                type="time"
-                                value={formatTimeHHMM(currentEditingEvent.timeWindow?.start) || '09:00'}
-                                onChange={(e) => {
-                                  const newConfirmations = { ...currentEditingEvent.confirmations };
-                                  Object.keys(newConfirmations).forEach((key) => {
-                                    newConfirmations[key] = { ...newConfirmations[key], confirmed: false };
-                                  });
-                                  setCurrentEditingEvent({
-                                    ...currentEditingEvent,
-                                    timeWindow: { start: e.target.value, end: currentEditingEvent.timeWindow?.end || '18:00' },
-                                    confirmations: newConfirmations
-                                  });
-                                }}
-                              />
-                              <TextInput
-                                type="time"
-                                value={formatTimeHHMM(currentEditingEvent.timeWindow?.end) || '18:00'}
-                                onChange={(e) => {
-                                  const newConfirmations = { ...currentEditingEvent.confirmations };
-                                  Object.keys(newConfirmations).forEach((key) => {
-                                    newConfirmations[key] = { ...newConfirmations[key], confirmed: false };
-                                  });
-                                  setCurrentEditingEvent({
-                                    ...currentEditingEvent,
-                                    timeWindow: { start: currentEditingEvent.timeWindow?.start || '09:00', end: e.target.value },
-                                    confirmations: newConfirmations
-                                  });
-                                }}
-                              />
-                            </div>
-                            <SimpleButton
-                              type="button"
-                              variant="secondary"
-                              onClick={openSetupTimeModal}
-                              className="h-fit w-full md:w-auto px-3 py-2 text-xs font-semibold"
-                            >
-                              <Clock className="w-3.5 h-3.5" /> Timer
-                            </SimpleButton>
-                          </div>
-                          <p className="text-[10px] text-slate-500">Use the timer option to pick the setup window quickly.</p>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <TextInput
+                            type="time"
+                            value={formatTimeHHMM(currentEditingEvent.timeWindow?.start) || '09:00'}
+                            onChange={(e) => {
+                              const newConfirmations = { ...currentEditingEvent.confirmations };
+                              Object.keys(newConfirmations).forEach((key) => {
+                                newConfirmations[key] = { ...newConfirmations[key], confirmed: false };
+                              });
+                              setCurrentEditingEvent({
+                                ...currentEditingEvent,
+                                timeWindow: { start: e.target.value, end: currentEditingEvent.timeWindow?.end || '18:00' },
+                                confirmations: newConfirmations
+                              });
+                            }}
+                          />
+                          <TextInput
+                            type="time"
+                            value={formatTimeHHMM(currentEditingEvent.timeWindow?.end) || '18:00'}
+                            onChange={(e) => {
+                              const newConfirmations = { ...currentEditingEvent.confirmations };
+                              Object.keys(newConfirmations).forEach((key) => {
+                                newConfirmations[key] = { ...newConfirmations[key], confirmed: false };
+                              });
+                              setCurrentEditingEvent({
+                                ...currentEditingEvent,
+                                timeWindow: { start: currentEditingEvent.timeWindow?.start || '09:00', end: e.target.value },
+                                confirmations: newConfirmations
+                              });
+                            }}
+                          />
                         </div>
                       </Field>
                       <Field label="Event Place / Venue">
@@ -1014,8 +1043,11 @@ export default function SalesRepresentativeModule({
                                     .filter((_, idx) => idx !== item.originalIndex && eventItems[idx].itemId === item.itemId)
                                     .reduce((sum, i) => sum + (i.quantity || 0), 0);
 
+                                  // Since getInventoryApi now excludes currentEditingEvent reservations,
+                                  // dbAvailStock perfectly represents the max items we can grab (ignoring what we already saved).
+                                  // So we just subtract otherSelectedQty (which tracks UI selection in other rows).
                                   const dbAvailStock = matchingInv ? (matchingInv as any).availableStock ?? matchingInv.currentStock : 0;
-                                  const availStock = Math.max(0, dbAvailStock + savedQty - otherSelectedQty);
+                                  const availStock = Math.max(0, dbAvailStock - otherSelectedQty);
 
                                   return (
                                     <div key={item.originalIndex} className="grid items-end gap-3 sm:grid-cols-[1.5fr_100px_120px_40px]">
@@ -1996,13 +2028,6 @@ export default function SalesRepresentativeModule({
           </div>
         )}
 
-        <TimeRangePickerModal
-          isOpen={isSetupTimeModalOpen}
-          onClose={() => setIsSetupTimeModalOpen(false)}
-          initialStartTime={formatTimeHHMM(currentEditingEvent?.timeWindow?.start) || '09:00'}
-          initialEndTime={formatTimeHHMM(currentEditingEvent?.timeWindow?.end) || '18:00'}
-          onSave={handleSetupTimeSave}
-        />
     </>
   );
   if (hideLayout) {

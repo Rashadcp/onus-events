@@ -7,8 +7,7 @@ import { Button } from '../ui/Button';
 import { SectionHeader } from '../ui/SectionHeader';
 import { Alert } from '../ui/Alert';
 import { Item } from '../../types';
-import { getInventoryApi } from '../../services/api';
-import { apiClient } from '../../utils/apiClient';
+import { getInventoryApi, checkItemAvailabilityApi } from '../../services/api';
 
 interface FreeStockMonitorProps {
   initialItems?: Item[];
@@ -47,7 +46,7 @@ export function FreeStockMonitor({ initialItems = [] }: FreeStockMonitorProps) {
       await Promise.all(
         activeItems.map(async (item: any) => {
           try {
-            const res = await apiClient.get(`/api/inventory/${item._id}/availability?startDate=${startIso}&endDate=${endIso}`);
+            const res = await checkItemAvailabilityApi(item._id, startIso, endIso);
             map[item._id] = res.data.availableQty;
           } catch (err) {
             map[item._id] = item.currentStock;

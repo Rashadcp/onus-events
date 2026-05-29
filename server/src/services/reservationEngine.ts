@@ -24,10 +24,26 @@ interface AvailabilityCheckResult {
 /**
  * Calculates buffered start and end dates based on system configuration.
  */
-export function getBufferedRange(start: Date, end: Date): { bufferedStart: Date; bufferedEnd: Date } {
+export function getBufferedRange(start: Date, end: Date, place?: string): { bufferedStart: Date; bufferedEnd: Date } {
+  let bufferMs = BUFFER_MS;
+  if (place) {
+    const placeLower = place.toLowerCase();
+    if (
+      placeLower.includes('out of city') || 
+      placeLower.includes('out-of-city') || 
+      placeLower.includes('remote') || 
+      placeLower.includes('distant') || 
+      placeLower.includes('long distance') || 
+      placeLower.includes('out of state') || 
+      placeLower.includes('out-of-state')
+    ) {
+      // Apply an 8-hour buffer instead of default (2 hours) for remote events
+      bufferMs = 8 * 60 * 60 * 1000;
+    }
+  }
   return {
-    bufferedStart: new Date(start.getTime() - BUFFER_MS),
-    bufferedEnd: new Date(end.getTime() + BUFFER_MS)
+    bufferedStart: new Date(start.getTime() - bufferMs),
+    bufferedEnd: new Date(end.getTime() + bufferMs)
   };
 }
 
@@ -41,7 +57,8 @@ export async function getItemAvailability(
   itemId: string | mongoose.Types.ObjectId,
   startDate: Date,
   endDate: Date,
-  excludeEventId?: string | mongoose.Types.ObjectId
+  excludeEventId?: string | mongoose.Types.ObjectId,
+  place?: string
 ): Promise<{ currentStock: number; reservedAndDispatchedQty: number; availableQty: number }> {
   
   const item = await Item.findOne({ _id: itemId, isActive: true });
@@ -49,7 +66,7 @@ export async function getItemAvailability(
     throw new Error(`Inventory item ${itemId} not found or inactive.`);
   }
 
-  const { bufferedStart, bufferedEnd } = getBufferedRange(startDate, endDate);
+  const { bufferedStart, bufferedEnd } = getBufferedRange(startDate, endDate, place);
 
   // Find all active, overlapping reservations
   const overlappingQuery: any = {
@@ -74,6 +91,13 @@ export async function getItemAvailability(
       // Ignore expired pending draft reservations
       return total;
     }
+    
+    // Real world logic: If the scheduled return date (endDate) has passed, 
+    // we assume the event is finished and items are returned, thus making them available.
+    if ((res.status === 'CONFIRMED' || res.status === 'DISPATCHED') && res.endDate < now) {
+      return total;
+    }
+    
     return total + res.quantity;
   }, 0);
 
@@ -143,7 +167,11 @@ export async function createReservations(
   session?: mongoose.ClientSession
 ): Promise<IReservation[]> {
   
-  const { bufferedStart, bufferedEnd } = getBufferedRange(startDate, endDate);
+  // Look up event place dynamically to apply dynamic transport buffer
+  const event = await mongoose.model('Event').findById(eventId).session(session || null as any);
+  const place = event?.place;
+
+  const { bufferedStart, bufferedEnd } = getBufferedRange(startDate, endDate, place);
   const expiresAt = new Date(Date.now() + DRAFT_EXPIRY_MS);
   
   const reservationsToCreate = items.map(item => ({

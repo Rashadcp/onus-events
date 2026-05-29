@@ -78,7 +78,7 @@ export async function createItem(req: Request, res: Response) {
  */
 export async function getItems(req: Request, res: Response) {
   try {
-    const { department, search, startDate, endDate, includeInactive } = req.query;
+    const { department, search, startDate, endDate, includeInactive, excludeEventId } = req.query;
     const filter: any = includeInactive === 'true' ? {} : { isActive: true };
 
     if (department && department !== 'All Departments') {
@@ -105,7 +105,8 @@ export async function getItems(req: Request, res: Response) {
             const { currentStock, reservedAndDispatchedQty, availableQty } = await getItemAvailability(
               item._id.toString(),
               start,
-              end
+              end,
+              excludeEventId as string
             );
             return {
               ...item.toObject(),

@@ -466,7 +466,7 @@ export default function LogisticsDashboard() {
                       <p className="text-xs text-slate-400 font-semibold">Syncing database logs...</p>
                     </div>
                   ) : (
-                    <div className="flex flex-col gap-6 print:w-full">
+                    <div className="flex flex-col gap-6 print:hidden">
                       
                       {/* Main datagrid checklist table */}
                       <LogisticsTable

@@ -8,9 +8,9 @@ import {
   convertQuotationToInvoiceApi,
   createBillingDocumentApi,
   getBillingDocumentsApi,
-  priceBillingDocumentApi
+  priceBillingDocumentApi,
+  downloadBillingPdfApi
 } from '../../services/api';
-import { apiClient } from '../../utils/apiClient';
 import { Button } from '../ui/Button';
 import { SectionHeader } from '../ui/SectionHeader';
 import { Alert } from '../ui/Alert';
@@ -228,9 +228,7 @@ export function BillingWorkspace({ initialItems, initialEvents }: BillingWorkspa
       return;
     }
 
-    const response = await apiClient.get(`/api/billing/${selectedDocument._id}/pdf?copyType=${copyType}`, {
-      responseType: 'blob'
-    });
+    const response = await downloadBillingPdfApi(selectedDocument._id, copyType);
     const url = window.URL.createObjectURL(response.data);
     const link = document.createElement('a');
     link.href = url;

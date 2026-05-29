@@ -12,6 +12,7 @@ export function middleware(request: NextRequest) {
     pathname.startsWith('/representative') ||
     pathname.startsWith('/inventory') ||
     pathname.startsWith('/logistics') ||
+    pathname.startsWith('/site-incharge') ||
     pathname.startsWith('/schedule') ||
     pathname.startsWith('/create-event') ||
     pathname.startsWith('/past-events') ||
@@ -28,6 +29,7 @@ export function middleware(request: NextRequest) {
     if (currentRole === 'ADMIN') return '/admin';
     if (currentRole === 'SALES_REPRESENTATIVE' || currentRole === 'REPRESENTATIVE') return '/representative';
     if (currentRole === 'LOADING_STAFF') return '/logistics';
+    if (currentRole === 'SITE_INCHARGE' || currentRole === 'CAPTAIN') return '/site-incharge';
     return '/schedule';
   };
 

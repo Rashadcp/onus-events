@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Edit2, Plus, Trash2, UserCheck, UserX } from 'lucide-react';
 import { User } from '../../types';
-import { createUser, deleteUser, getUsers, updateUser } from '../../utils/apiClient';
+import { createUserApi, deleteUserApi, getUsersApi, updateUserApi } from '../../services/api';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
 import { Input } from '../ui/Input';
@@ -33,7 +33,7 @@ export function RepresentativesPanel({ initialUsers = [] }: RepresentativesPanel
 
   const { data: representatives = [] } = useQuery<User[]>({
     queryKey: ['users', 'SALES_REPRESENTATIVE'],
-    queryFn: () => getUsers('SALES_REPRESENTATIVE'),
+    queryFn: () => getUsersApi('SALES_REPRESENTATIVE'),
     initialData: initialUsers.filter((user) => user.role === 'SALES_REPRESENTATIVE' || user.role === 'REPRESENTATIVE'),
   });
 
@@ -64,7 +64,7 @@ export function RepresentativesPanel({ initialUsers = [] }: RepresentativesPanel
   };
 
   const createMutation = useMutation({
-    mutationFn: createUser,
+    mutationFn: (payload: any) => createUserApi(payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
       toast.success('Sales representative created successfully.');
@@ -75,7 +75,7 @@ export function RepresentativesPanel({ initialUsers = [] }: RepresentativesPanel
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, payload }: { id: string; payload: Partial<User> & { password?: string } }) => updateUser(id, payload),
+    mutationFn: ({ id, payload }: { id: string; payload: Partial<User> & { password?: string } }) => updateUserApi(id, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
       toast.success('Sales representative updated successfully.');
@@ -86,7 +86,7 @@ export function RepresentativesPanel({ initialUsers = [] }: RepresentativesPanel
   });
 
   const disableMutation = useMutation({
-    mutationFn: deleteUser,
+    mutationFn: (id: string) => deleteUserApi(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
       toast.success('Sales representative disabled successfully.');
@@ -95,7 +95,7 @@ export function RepresentativesPanel({ initialUsers = [] }: RepresentativesPanel
   });
 
   const toggleStatusMutation = useMutation({
-    mutationFn: ({ id, isActive }: { id: string; isActive: boolean }) => updateUser(id, { isActive }),
+    mutationFn: ({ id, isActive }: { id: string; isActive: boolean }) => updateUserApi(id, { isActive }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
       toast.success('Representative status updated.');

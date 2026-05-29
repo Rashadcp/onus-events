@@ -8,7 +8,7 @@ import { Button } from '../ui/Button';
 import { Alert } from '../ui/Alert';
 import { SectionHeader } from '../ui/SectionHeader';
 import { ClockTimePicker } from '../ui/ClockTimePicker';
-import { apiClient } from '../../utils/apiClient';
+import { getInventoryApi, checkItemAvailabilityApi, createEventApi } from '../../services/api';
 
 interface CreateEventFormProps {
   initialItems?: any[];
@@ -33,10 +33,7 @@ export function CreateEventForm({ initialItems = [] }: CreateEventFormProps) {
   // Fetch Inventory items for selection
   const { data: inventoryData = [] } = useQuery({
     queryKey: ['inventory'],
-    queryFn: async () => {
-      const res = await apiClient.get('/api/inventory');
-      return res.data;
-    },
+    queryFn: () => getInventoryApi(),
     placeholderData: initialItems
   });
 
@@ -53,7 +50,7 @@ export function CreateEventForm({ initialItems = [] }: CreateEventFormProps) {
       await Promise.all(
         activeItems.map(async (item: any) => {
           try {
-            const res = await apiClient.get(`/api/inventory/${item._id}/availability?startDate=${start}&endDate=${end}`);
+            const res = await checkItemAvailabilityApi(item._id, start, end);
             map[item._id] = res.data.availableQty;
           } catch (err) {
             map[item._id] = item.currentStock;
@@ -78,10 +75,7 @@ export function CreateEventForm({ initialItems = [] }: CreateEventFormProps) {
 
   // Create Event Mutation
   const createEventMutation = useMutation({
-    mutationFn: async (payload: any) => {
-      const res = await apiClient.post('/api/events', payload);
-      return res.data;
-    },
+    mutationFn: (payload: any) => createEventApi(payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['events'] });
       setMessage('Event Created & Scheduled Successfully!');

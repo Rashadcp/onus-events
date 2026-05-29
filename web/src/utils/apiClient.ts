@@ -89,33 +89,3 @@ export async function apiFetch(endpoint: string, options: any = {}): Promise<any
     throw new Error(errorMsg);
   }
 }
-
-/**
- * User Management APIs
- */
-export async function getUsers(role?: string) {
-  const query = role ? `?role=${role}` : '';
-  return apiFetch(`/api/users${query}`);
-}
-
-export async function createUser(data: unknown) {
-  return apiFetch('/api/users', {
-    method: 'POST',
-    body: JSON.stringify(data),
-    headers: { 'Content-Type': 'application/json' }
-  });
-}
-
-export async function updateUser(id: string, data: any) {
-  return apiFetch(`/api/users/${id}`, {
-    method: 'PUT',
-    body: JSON.stringify(data),
-    headers: { 'Content-Type': 'application/json' }
-  });
-}
-
-export async function deleteUser(id: string) {
-  return apiFetch(`/api/users/${id}`, {
-    method: 'DELETE'
-  });
-}

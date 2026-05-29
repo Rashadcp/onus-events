@@ -57,7 +57,7 @@ export function VehicleTeamManager({
   setReloadingLoads
 }: VehicleTeamManagerProps) {
   return (
-    <Card className="p-6 bg-white border border-slate-200 shadow-sm rounded-md print:border-none print:shadow-none print:p-0">
+    <Card className="p-6 bg-white border border-slate-200 shadow-sm rounded-md print:hidden">
       <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest border-b border-slate-100 pb-3 flex items-center gap-2 mb-4">
         <Truck className="w-4 h-4 text-blue-500" /> 
         Vehicle & Team Details
@@ -75,6 +75,11 @@ export function VehicleTeamManager({
                 value={newStaffName}
                 onChange={(e) => setNewStaffName(e.target.value)}
                 className="glow-input flex-1 min-w-0 text-xs"
+                autoComplete="off"
+                data-1p-ignore="true"
+                data-lpignore="true"
+                data-bitwarden-ignore="true"
+                spellCheck={false}
               />
               <Button
                 onClick={addStaffMember}
@@ -112,6 +117,11 @@ export function VehicleTeamManager({
               value={loadingVehicleNo}
               onChange={(e) => setLoadingVehicleNo(e.target.value)}
               className="glow-input text-xs font-mono font-bold uppercase text-blue-700"
+              autoComplete="off"
+              data-1p-ignore="true"
+              data-lpignore="true"
+              data-bitwarden-ignore="true"
+              spellCheck={false}
             />
           </div>
 
@@ -123,6 +133,10 @@ export function VehicleTeamManager({
               value={loadingLoads}
               onChange={(e) => setLoadingLoads(Number(e.target.value) || 1)}
               className="glow-input text-xs font-bold text-center"
+              autoComplete="off"
+              data-1p-ignore="true"
+              data-lpignore="true"
+              data-bitwarden-ignore="true"
             />
           </div>
 
@@ -134,6 +148,10 @@ export function VehicleTeamManager({
               value={loadingCharges}
               onChange={(e) => setLoadingCharges(Number(e.target.value) || 0)}
               className="glow-input text-xs font-bold text-right text-emerald-700 bg-emerald-50/30"
+              autoComplete="off"
+              data-1p-ignore="true"
+              data-lpignore="true"
+              data-bitwarden-ignore="true"
             />
           </div>
         </div>
@@ -149,6 +167,11 @@ export function VehicleTeamManager({
                 value={newReloadStaffName}
                 onChange={(e) => setNewReloadStaffName(e.target.value)}
                 className="glow-input flex-1 min-w-0 text-xs"
+                autoComplete="off"
+                data-1p-ignore="true"
+                data-lpignore="true"
+                data-bitwarden-ignore="true"
+                spellCheck={false}
               />
               <Button
                 onClick={addReloadStaffMember}
@@ -186,6 +209,11 @@ export function VehicleTeamManager({
               value={reloadingVehicleNo}
               onChange={(e) => setReloadingVehicleNo(e.target.value)}
               className="glow-input text-xs font-mono font-bold uppercase text-blue-700"
+              autoComplete="off"
+              data-1p-ignore="true"
+              data-lpignore="true"
+              data-bitwarden-ignore="true"
+              spellCheck={false}
             />
           </div>
 
@@ -197,6 +225,10 @@ export function VehicleTeamManager({
               value={reloadingLoads}
               onChange={(e) => setReloadingLoads(Number(e.target.value) || 1)}
               className="glow-input text-xs font-bold text-center"
+              autoComplete="off"
+              data-1p-ignore="true"
+              data-lpignore="true"
+              data-bitwarden-ignore="true"
             />
           </div>
         </div>

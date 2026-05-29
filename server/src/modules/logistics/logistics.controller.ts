@@ -3,9 +3,15 @@ import { z } from 'zod';
 import mongoose from 'mongoose';
 import LogisticsLog from '../../models/LogisticsLog';
 import Event from '../../models/Event';
+import Item from '../../models/Item';
+import StockLog from '../../models/StockLog';
+import BillingDocument from '../../models/BillingDocument';
+import Reservation from '../../models/Reservation';
+import { calculateBilling } from '../../services/pricingEngine';
 import { 
   dispatchEventReservations, 
-  returnEventReservations 
+  returnEventReservations,
+  getBufferedRange
 } from '../../services/reservationEngine';
 
 // Logistics Validation Schema
@@ -87,6 +93,141 @@ export async function getLogisticsLog(req: Request, res: Response) {
 }
 
 /**
+ * Automatically creates or updates DISPATCHED status reservations for any additional logistics items
+ * to block them in the availability calculations for overlapping events.
+ */
+async function syncAdditionalItemReservations(
+  eventId: string,
+  additionalItems: any[],
+  session: mongoose.ClientSession
+) {
+  // Fetch event details to get dates and location
+  const event = await Event.findById(eventId).session(session);
+  if (!event) return;
+
+  const { bufferedStart, bufferedEnd } = getBufferedRange(event.eventDate.start, event.eventDate.end, event.place);
+
+  // We should first remove any existing logistics-generated additional reservations for this event.
+  // To distinguish them from standard reservations, we track them.
+  // Standard reservations correspond to event.items.
+  // So any reservation for this event whose itemId is NOT in the event.items list is an additional logistics reservation!
+  const originalItemIds = event.items.map(item => item.itemId.toString());
+
+  await Reservation.deleteMany({
+    eventId: new mongoose.Types.ObjectId(eventId),
+    itemId: { $nin: originalItemIds.map(id => new mongoose.Types.ObjectId(id)) }
+  }, { session });
+
+  // Now, create new DISPATCHED status reservations for each additional item
+  if (additionalItems && additionalItems.length > 0) {
+    const reservationsToCreate = [];
+    for (const itemInfo of additionalItems) {
+      const item = await Item.findOne({ itemCode: itemInfo.itemCode.toUpperCase(), isActive: true }).session(session);
+      if (item) {
+        reservationsToCreate.push({
+          eventId: new mongoose.Types.ObjectId(eventId),
+          itemId: item._id,
+          quantity: itemInfo.quantity,
+          status: 'DISPATCHED' as const,
+          startDate: bufferedStart,
+          endDate: bufferedEnd
+        });
+      }
+    }
+
+    if (reservationsToCreate.length > 0) {
+      await Reservation.insertMany(reservationsToCreate, { session });
+    }
+  }
+}
+
+/**
+ * Automatically synchronizes logistics items and charges with the associated billing document (Invoice).
+ */
+async function syncLogisticsWithBilling(
+  eventId: string,
+  additionalItems: any[],
+  missingItems: any[],
+  loadingCharges: number,
+  session: mongoose.ClientSession
+) {
+  // Find the associated invoice for this event
+  const invoice = await BillingDocument.findOne({ eventId, documentType: 'INVOICE' }).session(session);
+  if (!invoice) return; // If no invoice, we don't automatically update (quotation might be converted later)
+
+  // Keep track of existing non-logistics items (original items) by filtering out any previous auto-generated logistics line items
+  const nonLogisticsLines = invoice.lineItems.filter(line => 
+    !line.description.includes('(Logistics Additional Delivery)') &&
+    !line.description.includes('(Lost/Missing Replacement Charge)') &&
+    !line.description.includes('Logistics Handling & Loading Charges')
+  );
+
+  const updatedInputLines: any[] = [...nonLogisticsLines];
+
+  // 1. Process Additional Items (Rentals)
+  if (additionalItems && additionalItems.length > 0) {
+    for (const itemInfo of additionalItems) {
+      const item = await Item.findOne({ itemCode: itemInfo.itemCode.toUpperCase(), isActive: true }).session(session);
+      if (item) {
+        updatedInputLines.push({
+          itemId: item._id.toString(),
+          itemCode: item.itemCode,
+          description: `${item.name} (Logistics Additional Delivery)`,
+          quantity: itemInfo.quantity,
+          rentalDays: 1, // standard rental days
+          unitRate: item.rentalRate,
+          discountType: 'FLAT',
+          discountValue: 0,
+          gstRate: 18
+        });
+      }
+    }
+  }
+
+  // 2. Process Missing Items (Sales)
+  if (missingItems && missingItems.length > 0) {
+    for (const itemInfo of missingItems) {
+      const item = await Item.findById(itemInfo.itemId).session(session);
+      if (item) {
+        updatedInputLines.push({
+          itemId: item._id.toString(),
+          itemCode: item.itemCode,
+          description: `${item.name} (Lost/Missing Replacement Charge)`,
+          quantity: itemInfo.quantity,
+          rentalDays: 1,
+          unitRate: item.saleRate, // Charged at full replacement value (saleRate)
+          discountType: 'FLAT',
+          discountValue: 0,
+          gstRate: 18
+        });
+      }
+    }
+  }
+
+  // 3. Process Loading Charges (Expenses/Service Fees)
+  if (loadingCharges && loadingCharges > 0) {
+    updatedInputLines.push({
+      itemCode: 'LOGISTICS-FEE',
+      description: 'Logistics Handling & Loading Charges',
+      quantity: 1,
+      rentalDays: 1,
+      unitRate: loadingCharges,
+      discountType: 'FLAT',
+      discountValue: 0,
+      gstRate: 18 // standard service tax
+    });
+  }
+
+  // Recalculate invoice pricing and totals
+  if (updatedInputLines.length > 0) {
+    const pricing = await calculateBilling(updatedInputLines);
+    invoice.lineItems = pricing.lineItems;
+    invoice.totals = pricing.totals;
+    await invoice.save({ session });
+  }
+}
+
+/**
  * Create or update a Logistics Log sheet (Admin & Loading Staff).
  * Incorporates complete audit trail logging if modified.
  */
@@ -130,6 +271,43 @@ export async function updateLogisticsLog(req: Request, res: Response) {
           { $set: { eventStatus: 'RETURNED' } },
           { session }
         );
+
+        // Real-world stock logic: Deduct missing items from warehouse inventory and write audit log
+        const isAlreadyCompleted = log && log.status === 'COMPLETED';
+        if (!isAlreadyCompleted) {
+          const missingItemsList = validated.missingItems || log?.missingItems || [];
+          for (const missingInfo of missingItemsList) {
+            const item = await Item.findById(missingInfo.itemId).session(session);
+            if (item) {
+              const previousStock = item.currentStock;
+              const newStock = Math.max(0, previousStock - missingInfo.quantity);
+              const difference = newStock - previousStock;
+              
+              if (difference !== 0) {
+                item.currentStock = newStock;
+                await item.save({ session });
+                
+                // Seed audited stock log entry
+                await StockLog.create(
+                  [
+                    {
+                      itemId: item._id,
+                      itemCode: item.itemCode,
+                      previousStock: previousStock,
+                      newStock: newStock,
+                      difference: difference,
+                      state: 'DAMAGED',
+                      warehouse: item.warehouse || 'Main Warehouse',
+                      reason: `Lost/Missing items during logistics return (Event #${eventId})`,
+                      modifiedBy: new mongoose.Types.ObjectId(userId)
+                    }
+                  ],
+                  { session }
+                );
+              }
+            }
+          }
+        }
       }
     }
 
@@ -150,6 +328,20 @@ export async function updateLogisticsLog(req: Request, res: Response) {
           }
         ],
         { session }
+      );
+
+      await syncAdditionalItemReservations(
+        eventId,
+        validated.additionalItems || [],
+        session
+      );
+
+      await syncLogisticsWithBilling(
+        eventId,
+        validated.additionalItems || [],
+        validated.missingItems || [],
+        validated.loadingCharges || 0,
+        session
       );
 
       await session.commitTransaction();
@@ -199,6 +391,26 @@ export async function updateLogisticsLog(req: Request, res: Response) {
         $push: { modifiedBy: auditRecord }
       },
       { new: true, session }
+    );
+
+    if (!updatedLog) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(404).json({ error: 'Logistics log not found.' });
+    }
+
+    await syncAdditionalItemReservations(
+      eventId,
+      updatedLog.additionalItems || [],
+      session
+    );
+
+    await syncLogisticsWithBilling(
+      eventId,
+      updatedLog.additionalItems || [],
+      updatedLog.missingItems || [],
+      updatedLog.loadingCharges || 0,
+      session
     );
 
     await session.commitTransaction();

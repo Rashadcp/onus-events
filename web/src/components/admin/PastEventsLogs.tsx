@@ -7,7 +7,7 @@ import { Button } from '../ui/Button';
 import { Alert } from '../ui/Alert';
 import { SectionHeader } from '../ui/SectionHeader';
 import { Modal } from '../ui/Modal';
-import { apiClient } from '../../utils/apiClient';
+import { getDeletedEventsApi, recoverEventApi } from '../../services/api';
 
 interface PastEventsLogsProps {
   initialEvents?: any[];
@@ -23,10 +23,7 @@ export function PastEventsLogs({ initialEvents = [] }: PastEventsLogsProps) {
   // TanStack Query for events
   const { data: eventsData = [] } = useQuery({
     queryKey: ['events'],
-    queryFn: async () => {
-      const res = await apiClient.get('/api/events');
-      return res.data;
-    },
+    queryFn: () => getDeletedEventsApi(),
     placeholderData: initialEvents
   });
 
@@ -34,10 +31,7 @@ export function PastEventsLogs({ initialEvents = [] }: PastEventsLogsProps) {
 
   // Recover mutation
   const recoverEventMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const res = await apiClient.post(`/api/events/${id}/recover`);
-      return res.data;
-    },
+    mutationFn: (id: string) => recoverEventApi(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['events'] });
       setMessage('Event recovered successfully in database!');

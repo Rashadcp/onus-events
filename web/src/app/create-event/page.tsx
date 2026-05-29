@@ -4,8 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '../../store/useAuthStore';
-import { getInventoryApi, createEventApi } from '../../services/api';
-import { apiClient } from '../../utils/apiClient';
+import { getInventoryApi, createEventApi, checkItemAvailabilityApi } from '../../services/api';
 import { AuthGuard } from '../../components/auth/AuthGuard';
 
 // Icons
@@ -109,7 +108,7 @@ export default function CreateEventPage() {
     try {
       const startIso = new Date(`${startDate}T${startTime}`).toISOString();
       const endIso = new Date(`${endDate}T${endTime}`).toISOString();
-      const res = await apiClient.get(`/api/inventory/${selectedItemId}/availability?startDate=${startIso}&endDate=${endIso}`);
+      const res = await checkItemAvailabilityApi(selectedItemId, startIso, endIso);
       setAvailableStock(res.data.availableQty);
     } catch {
       // Fallback to absolute current stock if endpoint fails or parses invalid date
