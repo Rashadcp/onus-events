@@ -386,17 +386,22 @@ export function InventoryCatalog({
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {filteredItems.map((item) => {
                 const isUnderStock = item.currentStock < item.minimumStock;
+                const isOutOfStock = item.currentStock <= 0;
                 const progressPercentage = Math.min(100, (item.currentStock / item.minimumStock) * 100);
 
                 return (
-                  <Card key={item.itemCode} className={`flex flex-col gap-4 p-5 hover:shadow-md border transition relative ${isUnderStock ? 'border-red-200 bg-red-50/10' : 'border-[#E2E8F0] bg-white'}`}>
+                  <Card key={item.itemCode} className={`flex flex-col gap-4 p-5 hover:shadow-md border transition relative ${isOutOfStock ? 'border-red-300 bg-red-50/20' : isUnderStock ? 'border-amber-200 bg-amber-50/10' : 'border-[#E2E8F0] bg-white'}`}>
                     
-                    {/* Flashing Reorder Indicator */}
-                    {isUnderStock && (
-                      <span className="absolute top-3 right-3 bg-red-100 text-red-700 border border-red-200 font-bold px-2 py-0.5 rounded text-[9px] uppercase tracking-wider animate-pulse flex items-center gap-1 z-10">
-                        <span>⚠️</span> Reorder Alert
+                    {/* Flashing Stock Warning Indicator */}
+                    {isOutOfStock ? (
+                      <span className="absolute top-3 right-3 bg-red-600 text-white font-extrabold px-2 py-0.5 rounded text-[9px] uppercase tracking-wider animate-pulse flex items-center gap-1 z-10 shadow-xs">
+                        <span>⚠️</span> Out of Stock
                       </span>
-                    )}
+                    ) : isUnderStock ? (
+                      <span className="absolute top-3 right-3 bg-amber-100 text-amber-700 border border-amber-200 font-bold px-2 py-0.5 rounded text-[9px] uppercase tracking-wider animate-pulse flex items-center gap-1 z-10">
+                        <span>⚠️</span> Low Stock
+                      </span>
+                    ) : null}
 
                     {/* Image Block */}
                     <div className="w-full h-36 bg-slate-50 border border-slate-100 rounded-lg overflow-hidden flex items-center justify-center text-xs text-slate-400 relative">
@@ -430,15 +435,23 @@ export function InventoryCatalog({
                       {/* Stock indicator tracking bar */}
                       <div className="mt-3 flex flex-col gap-1">
                         <div className="flex justify-between items-center text-[10px] text-slate-400 font-bold uppercase">
-                          <span>Stock: {item.currentStock} / {item.minimumStock} min</span>
-                          <span className={isUnderStock ? 'text-red-600' : 'text-slate-500'}>
-                            {Math.round(progressPercentage)}%
-                          </span>
+                          {isOutOfStock ? (
+                            <span className="text-red-650 font-extrabold text-[10px] uppercase tracking-wider flex items-center gap-0.5 animate-pulse">
+                              ⚠️ Out of Stock
+                            </span>
+                          ) : (
+                            <>
+                              <span>Stock: {item.currentStock} / {item.minimumStock} min</span>
+                              <span className={isUnderStock ? 'text-amber-605 font-bold' : 'text-slate-500'}>
+                                {Math.round(progressPercentage)}%
+                              </span>
+                            </>
+                          )}
                         </div>
                         <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
                           <div 
-                            className={`h-full rounded-full transition-all duration-300 ${isUnderStock ? 'bg-red-500 animate-pulse' : 'bg-emerald-500'}`} 
-                            style={{ width: `${progressPercentage}%` }}
+                            className={`h-full rounded-full transition-all duration-300 ${isOutOfStock ? 'bg-red-600 animate-pulse' : isUnderStock ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'}`} 
+                            style={{ width: `${isOutOfStock ? 100 : progressPercentage}%` }}
                           />
                         </div>
                       </div>
@@ -508,8 +521,9 @@ export function InventoryCatalog({
                 <tbody>
                   {filteredItems.map((item) => {
                     const isUnderStock = item.currentStock < item.minimumStock;
+                    const isOutOfStock = item.currentStock <= 0;
                     return (
-                      <tr key={item.itemCode} className={`border-b border-[#E2E8F0] hover:bg-slate-50/50 transition ${isUnderStock ? 'bg-red-50/5' : ''}`}>
+                      <tr key={item.itemCode} className={`border-b border-[#E2E8F0] hover:bg-slate-50/50 transition ${isOutOfStock ? 'bg-red-50/10' : isUnderStock ? 'bg-amber-50/5' : ''}`}>
                         <td className="p-3">
                           <div className="flex items-center gap-3">
                             <div className="w-10 h-10 rounded border bg-slate-50 overflow-hidden shrink-0 flex items-center justify-center text-[10px] text-slate-400">
@@ -530,10 +544,18 @@ export function InventoryCatalog({
                         <td className="p-3 text-slate-500 font-medium">📍 {item.warehouse || 'Main Warehouse'}</td>
                         <td className="p-3 text-center">
                           <div className="flex flex-col items-center gap-1">
-                            <span className={`font-bold px-2 py-0.5 rounded ${isUnderStock ? 'bg-red-100 text-red-700 animate-pulse' : 'bg-slate-100 text-slate-700'}`}>
-                              {item.currentStock} / {item.minimumStock} min
-                            </span>
-                            {isUnderStock && <span className="text-[9px] text-red-500 font-bold uppercase">⚠️ Reorder stock</span>}
+                            {isOutOfStock ? (
+                              <span className="bg-red-600 text-white font-extrabold px-2.5 py-1 rounded text-[10px] uppercase tracking-wider animate-pulse flex items-center gap-1 shadow-2xs">
+                                ⚠️ Out of Stock
+                              </span>
+                            ) : (
+                              <>
+                                <span className={`font-bold px-2 py-0.5 rounded ${isUnderStock ? 'bg-amber-100 text-amber-750 animate-pulse' : 'bg-slate-100 text-slate-700'}`}>
+                                  {item.currentStock} / {item.minimumStock} min
+                                </span>
+                                {isUnderStock && <span className="text-[9px] text-amber-500 font-bold uppercase">⚠️ Low stock</span>}
+                              </>
+                            )}
                           </div>
                         </td>
                         <td className="p-3">

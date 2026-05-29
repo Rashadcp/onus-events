@@ -7,16 +7,29 @@ export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Define protected paths
-  const isProtectedRoute = 
-    pathname.startsWith('/admin') || 
-    pathname.startsWith('/representative') || 
-    pathname.startsWith('/inventory') || 
-    pathname.startsWith('/logistics') || 
-    pathname.startsWith('/schedule') || 
-    pathname.startsWith('/create-event') || 
-    pathname.startsWith('/past-events') || 
+  const isProtectedRoute =
+    pathname.startsWith('/admin') ||
+    pathname.startsWith('/representative') ||
+    pathname.startsWith('/inventory') ||
+    pathname.startsWith('/logistics') ||
+    pathname.startsWith('/schedule') ||
+    pathname.startsWith('/create-event') ||
+    pathname.startsWith('/past-events') ||
     pathname.startsWith('/customers') ||
     pathname.startsWith('/events');
+
+  const isRepOnlyRoute =
+    pathname.startsWith('/representative') ||
+    pathname.startsWith('/create-event') ||
+    pathname.startsWith('/past-events') ||
+    pathname.startsWith('/customers');
+
+  const getRoleHome = (currentRole: string) => {
+    if (currentRole === 'ADMIN') return '/admin';
+    if (currentRole === 'SALES_REPRESENTATIVE' || currentRole === 'REPRESENTATIVE') return '/representative';
+    if (currentRole === 'LOADING_STAFF') return '/logistics';
+    return '/schedule';
+  };
 
   // 1. If visiting a protected page without an access token, redirect directly to login
   if (isProtectedRoute && !token) {
@@ -26,43 +39,16 @@ export function middleware(request: NextRequest) {
 
   // 2. Role-based Server-side Protection Guard
   if (token && role) {
-    // If requesting ADMIN path but role is not ADMIN, redirect to their home dashboard
     if (pathname.startsWith('/admin') && role !== 'ADMIN') {
-      if (role === 'SALES_REPRESENTATIVE' || role === 'REPRESENTATIVE') {
-        return NextResponse.redirect(new URL('/representative', request.url));
-      } else if (role === 'LOADING_STAFF') {
-        return NextResponse.redirect(new URL('/logistics', request.url));
-      } else {
-        return NextResponse.redirect(new URL('/schedule', request.url));
-      }
+      return NextResponse.redirect(new URL(getRoleHome(role), request.url));
     }
-
-    // If requesting representative / events / past-events / customers paths but role is restricted
-    const isRepOnlyRoute = 
-      pathname.startsWith('/representative') || 
-      pathname.startsWith('/create-event') || 
-      pathname.startsWith('/past-events') || 
-      pathname.startsWith('/customers');
 
     if (isRepOnlyRoute && role !== 'ADMIN' && role !== 'SALES_REPRESENTATIVE' && role !== 'REPRESENTATIVE') {
-      if (role === 'LOADING_STAFF') {
-        return NextResponse.redirect(new URL('/logistics', request.url));
-      } else {
-        return NextResponse.redirect(new URL('/schedule', request.url));
-      }
+      return NextResponse.redirect(new URL(getRoleHome(role), request.url));
     }
 
-    // 3. If visiting login page ('/') while already authenticated, redirect directly to their dashboard
     if (pathname === '/') {
-      if (role === 'ADMIN') {
-        return NextResponse.redirect(new URL('/admin', request.url));
-      } else if (role === 'SALES_REPRESENTATIVE' || role === 'REPRESENTATIVE') {
-        return NextResponse.redirect(new URL('/representative', request.url));
-      } else if (role === 'LOADING_STAFF') {
-        return NextResponse.redirect(new URL('/logistics', request.url));
-      } else {
-        return NextResponse.redirect(new URL('/schedule', request.url));
-      }
+      return NextResponse.redirect(new URL(getRoleHome(role), request.url));
     }
   }
 

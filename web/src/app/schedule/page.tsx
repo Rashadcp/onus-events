@@ -53,15 +53,15 @@ export default function CaptainDashboard() {
   };
 
   return (
-    <AuthGuard allowedRoles={['ADMIN', 'SITE_INCHARGE', 'CAPTAIN']}>
+    <AuthGuard>
       <div className="erp-readable min-h-screen bg-[#F8FAFC] text-[#1E293B] flex flex-col font-sans overflow-x-hidden">
         
         {/* Dashboard Header */}
         <header className="border-b border-[#E2E8F0] bg-white sticky top-0 z-40 px-8 py-4 flex items-center justify-between shadow-sm">
           <div className="flex items-center gap-3">
-            <span className="w-3 h-3 bg-emerald-600 rounded-full" />
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-[#10B981] to-[#3B82F6] bg-clip-text text-transparent">
-              ONUS CAPTAINS WORKSPACE
+            <img src="/logo.png" alt="Onus Events" className="h-10 w-auto" />
+            <h1 className="text-xl font-bold text-slate-900">
+              Captains Workspace
             </h1>
           </div>
           <div className="flex items-center gap-4">

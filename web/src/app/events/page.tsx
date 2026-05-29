@@ -24,7 +24,7 @@ export default function EventsRedirectPage() {
   }, [isAuthenticated, user, router]);
 
   return (
-    <AuthGuard allowedRoles={['ADMIN', 'SALES_REPRESENTATIVE', 'REPRESENTATIVE']}>
+    <AuthGuard>
       <div className="min-h-screen w-full flex items-center justify-center bg-[#F8FAFC]">
         <div className="flex flex-col items-center gap-3">
           <div className="w-8 h-8 border-4 border-slate-200 border-t-blue-600 rounded-full animate-spin" />

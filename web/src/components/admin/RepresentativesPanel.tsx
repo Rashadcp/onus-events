@@ -66,7 +66,7 @@ export function RepresentativesPanel({ initialUsers = [] }: RepresentativesPanel
   const createMutation = useMutation({
     mutationFn: createUser,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['users', 'SALES_REPRESENTATIVE'] });
+      queryClient.invalidateQueries({ queryKey: ['users'] });
       toast.success('Sales representative created successfully.');
       setIsModalOpen(false);
       resetForm();
@@ -77,7 +77,7 @@ export function RepresentativesPanel({ initialUsers = [] }: RepresentativesPanel
   const updateMutation = useMutation({
     mutationFn: ({ id, payload }: { id: string; payload: Partial<User> & { password?: string } }) => updateUser(id, payload),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['users', 'SALES_REPRESENTATIVE'] });
+      queryClient.invalidateQueries({ queryKey: ['users'] });
       toast.success('Sales representative updated successfully.');
       setIsModalOpen(false);
       resetForm();
@@ -88,7 +88,7 @@ export function RepresentativesPanel({ initialUsers = [] }: RepresentativesPanel
   const disableMutation = useMutation({
     mutationFn: deleteUser,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['users', 'SALES_REPRESENTATIVE'] });
+      queryClient.invalidateQueries({ queryKey: ['users'] });
       toast.success('Sales representative disabled successfully.');
     },
     onError: (error: Error) => toast.error(error.message || 'Failed to disable representative.'),
@@ -97,7 +97,7 @@ export function RepresentativesPanel({ initialUsers = [] }: RepresentativesPanel
   const toggleStatusMutation = useMutation({
     mutationFn: ({ id, isActive }: { id: string; isActive: boolean }) => updateUser(id, { isActive }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['users', 'SALES_REPRESENTATIVE'] });
+      queryClient.invalidateQueries({ queryKey: ['users'] });
       toast.success('Representative status updated.');
     },
     onError: (error: Error) => toast.error(error.message || 'Failed to update status.'),
@@ -205,9 +205,18 @@ export function RepresentativesPanel({ initialUsers = [] }: RepresentativesPanel
                 !isActive ? 'opacity-60' : ''
               }`}
             >
-              <div>
-                <p className="font-bold text-slate-900">{rep.name || rep.fullName}</p>
-                <p className="text-xs font-medium text-slate-400">{rep.email}</p>
+              <div className="flex items-center gap-3">
+                <div className={`h-10 w-10 rounded-full font-bold flex items-center justify-center text-sm shrink-0 border ${
+                  isActive 
+                    ? 'bg-blue-50 text-blue-600 border-blue-100' 
+                    : 'bg-slate-100 text-slate-400 border-slate-200'
+                }`}>
+                  {((rep.name || rep.fullName || 'U').charAt(0)).toUpperCase()}
+                </div>
+                <div>
+                  <p className="font-bold text-slate-900">{rep.name || rep.fullName}</p>
+                  <p className="text-xs font-medium text-slate-400">{rep.email}</p>
+                </div>
               </div>
               <div className="font-mono text-xs font-semibold text-slate-600">{rep.phone || '-'}</div>
               <div className="text-right font-bold text-slate-900">{money(billing)}</div>

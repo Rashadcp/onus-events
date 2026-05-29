@@ -6,7 +6,7 @@ interface PrintSlipTemplateProps {
   selectedPrintType: string;
   printItemsFiltered: PrintItemRef[];
   printTotals: { subTotal: number; tax: number; grandTotal: number };
-  departments: { key: DepartmentKey; label: string }[];
+  departments: { key: string; label: string }[];
 }
 
 type PrintItemRef = {
@@ -112,7 +112,7 @@ export function PrintSlipTemplate({
       `}} />
 
       <div className="print-header text-center mb-6">
-        <h2 className="text-2xl font-black tracking-tight text-slate-900">ONUS EVENT MANAGEMENT</h2>
+        <img src="/logo.png" alt="Onus Events" className="h-14 mx-auto mb-2" />
         <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mt-1">Order Billing & Slip</p>
         <p className="text-[10px] text-slate-400 mt-0.5 font-bold">Ph: +91 95627 03957 | Email: office@onusevent.com</p>
       </div>

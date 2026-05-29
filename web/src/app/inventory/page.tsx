@@ -142,7 +142,7 @@ export default function FreeStockAvailabilityPage() {
   };
 
   return (
-    <AuthGuard allowedRoles={['ADMIN', 'SALES_REPRESENTATIVE', 'REPRESENTATIVE', 'SITE_INCHARGE', 'CAPTAIN', 'STORE_KEEPER']}>
+    <AuthGuard>
       <main className="min-h-screen bg-slate-50 text-slate-900 pb-12 font-sans antialiased">
         
         {/* Top Header Panel */}

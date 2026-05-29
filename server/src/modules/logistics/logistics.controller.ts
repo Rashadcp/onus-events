@@ -116,10 +116,20 @@ export async function updateLogisticsLog(req: Request, res: Response) {
 
     // Transition reservation statuses based on logistics workflow
     if (validated.status) {
-      if (validated.status === 'LOADING_OUT') {
+      if (validated.status === 'RELOADING_IN') {
         await dispatchEventReservations(eventId, session);
+        await Event.findOneAndUpdate(
+          { _id: eventId },
+          { $set: { eventStatus: 'DISPATCHED' } },
+          { session }
+        );
       } else if (validated.status === 'COMPLETED') {
         await returnEventReservations(eventId, session);
+        await Event.findOneAndUpdate(
+          { _id: eventId },
+          { $set: { eventStatus: 'RETURNED' } },
+          { session }
+        );
       }
     }
 

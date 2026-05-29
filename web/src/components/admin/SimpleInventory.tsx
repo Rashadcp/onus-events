@@ -634,17 +634,25 @@ export function SimpleInventory() {
                       {/* Stock Level */}
                       <td className="p-4 text-center">
                         <div className="flex flex-col items-center gap-1.5">
-                          <span className={`font-bold px-2 py-0.5 rounded-full text-xs flex items-center gap-1 ${
-                            isLowStock 
-                              ? 'bg-red-50 text-red-700 border border-red-100' 
-                              : 'bg-slate-100 text-slate-700'
-                          }`}>
-                            {item.currentStock} / {item.minimumStock} min
-                          </span>
-                          {isLowStock && (
-                            <span className="text-[9px] text-red-500 font-bold uppercase tracking-wider flex items-center gap-0.5">
-                              <AlertTriangle className="w-2.5 h-2.5" /> Reorder Alert
+                          {item.currentStock <= 0 ? (
+                            <span className="bg-red-600 text-white font-extrabold px-2.5 py-1 rounded-lg text-[10px] uppercase tracking-wider animate-pulse flex items-center gap-1 shadow-sm">
+                              <AlertTriangle className="w-3 h-3 text-white" /> Out of Stock
                             </span>
+                          ) : (
+                            <>
+                              <span className={`font-bold px-2 py-0.5 rounded-full text-xs flex items-center gap-1 ${
+                                isLowStock 
+                                  ? 'bg-amber-50 text-amber-700 border border-amber-200' 
+                                  : 'bg-slate-100 text-slate-700'
+                              }`}>
+                                {item.currentStock} / {item.minimumStock} min
+                              </span>
+                              {isLowStock && (
+                                <span className="text-[9px] text-amber-600 font-bold uppercase tracking-wider flex items-center gap-0.5">
+                                  <AlertTriangle className="w-2.5 h-2.5" /> Low Stock
+                                </span>
+                              )}
+                            </>
                           )}
                         </div>
                       </td>

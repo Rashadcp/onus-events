@@ -4,13 +4,13 @@
   "description": "Onus Event - Modular Event & Inventory Management System",
   "private": true,
   "workspaces": [
-    "packages/*"
+    "server",
+    "web"
   ],
   "scripts": {
-    "server:dev": "npm run dev --workspace=packages/server",
-    "server:build": "npm run build --workspace=packages/server",
-    "web:dev": "npm run dev --workspace=packages/web",
-    "web:build": "npm run build --workspace=packages/web",
-    "mobile:start": "npm start --workspace=packages/mobile"
+    "server:dev": "npm run dev --workspace=server",
+    "server:build": "npm run build --workspace=server",
+    "web:dev": "npm run dev --workspace=web",
+    "web:build": "npm run build --workspace=web"
   }
 }

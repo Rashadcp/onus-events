@@ -408,7 +408,7 @@ export default function EventDetailsPage() {
   }
 
   return (
-    <AuthGuard allowedRoles={['ADMIN', 'SALES_REPRESENTATIVE', 'REPRESENTATIVE']}>
+    <AuthGuard>
       <main className="min-h-screen bg-slate-50 text-slate-900 pb-12 font-sans antialiased print:bg-white print:pb-0">
         
         {/* Navigation / Actions Top Header */}
@@ -474,7 +474,7 @@ export default function EventDetailsPage() {
         {/* Printable quotation sheet area */}
         <div id="printable-quotation" className="hidden print:block p-10 bg-white font-sans text-slate-800">
           <div className="text-center border-b-2 border-slate-950 pb-4 mb-6">
-            <h2 className="text-2xl font-black uppercase tracking-wider text-slate-950">ONUS EVENT CO.</h2>
+            <img src="/logo.png" alt="Onus Events" className="h-14 mx-auto mb-2" />
             <p className="text-xs font-bold uppercase tracking-widest text-blue-600 mt-1">Premium Stage Rentals & Decors</p>
           </div>
 

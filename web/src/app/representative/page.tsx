@@ -25,6 +25,7 @@ import {
 import { AuthGuard } from '../../components/auth/AuthGuard';
 import { Field, SectionCard, SelectInput, SimpleButton, TextInput } from '../../components/representative/RepresentativeUI';
 import { PrintSlipTemplate } from '../../components/representative/PrintSlipTemplate';
+import { TimeRangePickerModal } from '../../components/ui/TimeRangePickerModal';
 import {
   DepartmentKey,
   MenuKey,
@@ -97,6 +98,10 @@ export default function SalesRepresentativeModule({
   const [freeStockDateTo, setFreeStockDateTo] = useState(todayStr);
   const [freeStockTimeFrom, setFreeStockTimeFrom] = useState('09:00');
   const [freeStockTimeTo, setFreeStockTimeTo] = useState('18:00');
+  const [freeStockSearch, setFreeStockSearch] = useState('');
+  const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
+  const [selectedViewEvent, setSelectedViewEvent] = useState<Event | null>(null);
+  const [isSetupTimeModalOpen, setIsSetupTimeModalOpen] = useState(false);
 
   // Customer accounts State
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
@@ -158,11 +163,12 @@ export default function SalesRepresentativeModule({
   const freeStockStart = `${freeStockDateFrom}T${freeStockTimeFrom}:00`;
   const freeStockEnd = `${freeStockDateTo}T${freeStockTimeTo}:00`;
   const { data: freeStockInventory = [], isLoading: freeStockLoading } = useQuery({
-    queryKey: ['free-stock-inventory', freeStockDept, freeStockStart, freeStockEnd],
+    queryKey: ['free-stock-inventory', freeStockDept, freeStockStart, freeStockEnd, freeStockSearch],
     queryFn: () => getInventoryApi({
       department: freeStockDept !== 'All Departments' ? freeStockDept : undefined,
       startDate: freeStockStart,
-      endDate: freeStockEnd
+      endDate: freeStockEnd,
+      search: freeStockSearch || undefined
     }),
     enabled: activeMenu === 'free-stock'
   });
@@ -196,11 +202,13 @@ export default function SalesRepresentativeModule({
     mutationFn: createEventApi,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['events'] });
+      queryClient.invalidateQueries({ queryKey: ['inventory-availability'] });
+      queryClient.invalidateQueries({ queryKey: ['inventory'] });
       switchTab('upcoming-events');
       setCurrentEditingEvent(null);
     },
     onError: (err: any) => {
-      alert(err.error || 'Failed to create event');
+      alert(err.message || 'Failed to create event');
     }
   });
 
@@ -208,11 +216,13 @@ export default function SalesRepresentativeModule({
     mutationFn: ({ id, payload }: { id: string; payload: any }) => updateEventApi(id, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['events'] });
+      queryClient.invalidateQueries({ queryKey: ['inventory-availability'] });
+      queryClient.invalidateQueries({ queryKey: ['inventory'] });
       switchTab('upcoming-events');
       setCurrentEditingEvent(null);
     },
     onError: (err: any) => {
-      alert(err.error || 'Failed to update event');
+      alert(err.message || 'Failed to update event');
     }
   });
 
@@ -220,6 +230,8 @@ export default function SalesRepresentativeModule({
     mutationFn: deleteEventApi,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['events'] });
+      queryClient.invalidateQueries({ queryKey: ['inventory-availability'] });
+      queryClient.invalidateQueries({ queryKey: ['inventory'] });
       setConfirmDeleteId(null);
     }
   });
@@ -228,24 +240,59 @@ export default function SalesRepresentativeModule({
     mutationFn: ({ eventId, dept }: { eventId: string; dept: string }) => confirmDepartmentApi(eventId, dept),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['events'] });
+      queryClient.invalidateQueries({ queryKey: ['inventory-availability'] });
+      queryClient.invalidateQueries({ queryKey: ['inventory'] });
       if (currentEditingEvent?._id) {
-        // Refresh editing event local state
-        const updated = events.find(e => e._id === currentEditingEvent._id);
-        if (updated) {
-          // Trigger local state updates to show checked department
-          const newConfirmations = { ...currentEditingEvent.confirmations };
-          newConfirmations[variables.dept] = { confirmed: true, confirmedBy: { name: user?.fullName || user?.name || 'You' }, confirmedAt: new Date() };
-          setCurrentEditingEvent({ ...currentEditingEvent, confirmations: newConfirmations });
-        }
+        // Trigger local state updates to show checked department instantly
+        const newConfirmations = { ...currentEditingEvent.confirmations };
+        newConfirmations[variables.dept] = { 
+          confirmed: true, 
+          confirmedBy: { name: user?.fullName || user?.name || 'You' }, 
+          confirmedAt: new Date() 
+        };
+        setCurrentEditingEvent({ ...currentEditingEvent, confirmations: newConfirmations });
       }
     },
     onError: (err: any) => {
-      alert(err.error || 'Failed to confirm department');
+      alert(err.message || 'Failed to confirm department');
     }
   });
 
   // Event Items CRUD for Create/Edit workflow
   const [eventItems, setEventItems] = useState<Array<{ itemId: string; quantity: number; description?: string; unitRate?: number; discountType?: 'FLAT' | 'PERCENTAGE'; discountValue?: number; gstRate?: number }>>([]);
+  const [confirmingDepts, setConfirmingDepts] = useState<Record<string, boolean>>({});
+
+  const formatTimeHHMM = (timeStr?: string) => {
+    if (!timeStr) return '';
+    const match = timeStr.match(/^(\d{1,2}):(\d{2})$/);
+    if (match) {
+      const hour = match[1].padStart(2, '0');
+      const min = match[2];
+      return `${hour}:${min}`;
+    }
+    return timeStr;
+  };
+
+  const openSetupTimeModal = () => {
+    if (!currentEditingEvent) return;
+
+    setIsSetupTimeModalOpen(true);
+  };
+
+  const handleSetupTimeSave = (start: string, end: string) => {
+    if (!currentEditingEvent) return;
+
+    const newConfirmations = { ...currentEditingEvent.confirmations };
+    Object.keys(newConfirmations).forEach((key) => {
+      newConfirmations[key] = { ...newConfirmations[key], confirmed: false };
+    });
+
+    setCurrentEditingEvent({
+      ...currentEditingEvent,
+      timeWindow: { start, end },
+      confirmations: newConfirmations
+    });
+  };
 
   useEffect(() => {
     if (activeMenu !== 'create-event' || currentEditingEvent) return;
@@ -263,10 +310,18 @@ export default function SalesRepresentativeModule({
 
   const addEventItem = (department: DepartmentKey) => {
     setEventItems([...eventItems, { itemId: '', quantity: 1, tempDepartment: department, discountType: 'FLAT', discountValue: 0, gstRate: 18 } as any]);
+    
+    // Automatically reset confirmation for this department since new items are added
+    if (currentEditingEvent?.confirmations?.[department]?.confirmed) {
+      const newConfirmations = { ...currentEditingEvent.confirmations };
+      newConfirmations[department] = { ...newConfirmations[department], confirmed: false };
+      setCurrentEditingEvent({ ...currentEditingEvent, confirmations: newConfirmations });
+    }
   };
 
   const updateEventItem = (index: number, patch: Partial<(typeof eventItems)[0]>) => {
     const updated = [...eventItems];
+    const oldItem = updated[index];
     updated[index] = { ...updated[index], ...patch };
     
     // Auto-fill from inventory selection
@@ -279,10 +334,67 @@ export default function SalesRepresentativeModule({
       }
     }
     setEventItems(updated);
+
+    // Auto-reset confirmation status of the affected department
+    const activeInventory = inventoryWithAvailability.length ? inventoryWithAvailability : inventoryItems;
+    const itemRef = patch.itemId 
+      ? activeInventory.find(i => i._id === patch.itemId || i.id === patch.itemId) 
+      : activeInventory.find(i => i._id === oldItem.itemId || i.id === oldItem.itemId);
+    const dept = itemRef?.department || (oldItem as any).tempDepartment;
+    if (dept && currentEditingEvent?.confirmations?.[dept]?.confirmed) {
+      const newConfirmations = { ...currentEditingEvent.confirmations };
+      newConfirmations[dept] = { ...newConfirmations[dept], confirmed: false };
+      setCurrentEditingEvent({ ...currentEditingEvent, confirmations: newConfirmations });
+    }
   };
 
   const removeEventItem = (index: number) => {
+    const itemToRemove = eventItems[index];
     setEventItems(eventItems.filter((_, i) => i !== index));
+
+    // Auto-reset confirmation status of the affected department
+    const activeInventory = inventoryWithAvailability.length ? inventoryWithAvailability : inventoryItems;
+    const dbItem = activeInventory.find(i => i._id === itemToRemove.itemId || i.id === itemToRemove.itemId);
+    const dept = dbItem?.department || (itemToRemove as any).tempDepartment;
+    if (dept && currentEditingEvent?.confirmations?.[dept]?.confirmed) {
+      const newConfirmations = { ...currentEditingEvent.confirmations };
+      newConfirmations[dept] = { ...newConfirmations[dept], confirmed: false };
+      setCurrentEditingEvent({ ...currentEditingEvent, confirmations: newConfirmations });
+    }
+  };
+
+  const handleConfirmDept = async (deptKey: string) => {
+    if (!currentEditingEvent?._id) return;
+
+    setConfirmingDepts(prev => ({ ...prev, [deptKey]: true }));
+
+    // Filter out unselected empty rows
+    const validItems = eventItems.filter(i => i.itemId);
+
+    const payload = {
+      customerName: currentEditingEvent.customerName,
+      eventDate: currentEditingEvent.eventDate,
+      timeWindow: currentEditingEvent.timeWindow || { start: '09:00', end: '18:00' },
+      place: currentEditingEvent.place || 'Main Venue',
+      program: currentEditingEvent.program || 'General',
+      items: validItems.map(i => ({ itemId: i.itemId, quantity: i.quantity })),
+      eventStatus: currentEditingEvent.eventStatus || 'INQUIRY'
+    };
+
+    try {
+      await updateEventApi(currentEditingEvent._id, payload);
+      confirmDeptMutation.mutate(
+        { eventId: currentEditingEvent._id, dept: deptKey },
+        {
+          onSettled: () => {
+            setConfirmingDepts(prev => ({ ...prev, [deptKey]: false }));
+          }
+        }
+      );
+    } catch (err: any) {
+      alert(err.message || 'Failed to update event details before confirmation');
+      setConfirmingDepts(prev => ({ ...prev, [deptKey]: false }));
+    }
   };
 
   // Group current selections by department (using dynamic groups)
@@ -305,7 +417,10 @@ export default function SalesRepresentativeModule({
 
   // Load event to edit mode
   const handleStartEdit = (event: Event) => {
-    setCurrentEditingEvent(event);
+    setCurrentEditingEvent({
+      ...event,
+      timeWindow: event.timeWindow || { start: '09:00', end: '18:00' }
+    });
     const mappedItems = (event.items || []).map(i => ({
       itemId: (i.itemId as any)?._id || (i.itemId as any),
       quantity: i.quantity,
@@ -317,6 +432,25 @@ export default function SalesRepresentativeModule({
     }));
     setEventItems(mappedItems);
     switchTab('create-event');
+  };
+
+  // Setup print config modal without redirecting
+  const handleStartPrint = (event: Event) => {
+    setCurrentEditingEvent({
+      ...event,
+      timeWindow: event.timeWindow || { start: '09:00', end: '18:00' }
+    });
+    const mappedItems = (event.items || []).map(i => ({
+      itemId: (i.itemId as any)?._id || (i.itemId as any),
+      quantity: i.quantity,
+      description: (i.itemId as any)?.name || '',
+      unitRate: (i.itemId as any)?.rentalRate || 0,
+      discountType: 'FLAT' as const,
+      discountValue: 0,
+      gstRate: 18
+    }));
+    setEventItems(mappedItems);
+    setIsPrintModalOpen(true);
   };
 
   const handleAddFromModal = (selectedItem: Item) => {
@@ -337,6 +471,15 @@ export default function SalesRepresentativeModule({
         gstRate: 18
       }]);
     }
+
+    // Auto-reset confirmation status of the added item's department
+    const dept = selectedItem.department;
+    if (dept && currentEditingEvent?.confirmations?.[dept]?.confirmed) {
+      const newConfirmations = { ...currentEditingEvent.confirmations };
+      newConfirmations[dept] = { ...newConfirmations[dept], confirmed: false };
+      setCurrentEditingEvent({ ...currentEditingEvent, confirmations: newConfirmations });
+    }
+
     setActiveSearchDept(null);
   };
 
@@ -378,6 +521,24 @@ export default function SalesRepresentativeModule({
       grandTotal: subTotal - discountTotal + gstTotal
     };
   }, [eventItems]);
+
+  // Dynamic Pricing Engine for read-only View Details Modal
+  const viewEventTotals = useMemo(() => {
+    if (!selectedViewEvent) return { subTotal: 0, tax: 0, grandTotal: 0 };
+    let subTotal = 0;
+    (selectedViewEvent.items || []).forEach(itemRef => {
+      const dbItem = itemRef.itemId as any;
+      if (dbItem) {
+        subTotal += itemRef.quantity * (dbItem.rentalRate || 0);
+      }
+    });
+    const tax = subTotal * 0.18;
+    return {
+      subTotal,
+      tax,
+      grandTotal: subTotal + tax
+    };
+  }, [selectedViewEvent]);
 
   const handleSaveEvent = (e: React.FormEvent) => {
     e.preventDefault();
@@ -464,15 +625,15 @@ export default function SalesRepresentativeModule({
       const dbItem = itemRef.itemId as any;
       if (!dbItem) return false;
 
-      if (selectedPrintType === 'CUSTOMER_COPY' || selectedPrintType === 'CUSTOMER_COPY_EXTRA') {
-        // ONLY confirmed departments
-        const deptConf = currentEditingEvent.confirmations?.[dbItem.department];
-        return deptConf && deptConf.confirmed;
-      } else if (selectedPrintType === 'DEPARTMENT_COPY') {
+      // Strictly only allow items from confirmed departments to show up in print
+      const deptConf = currentEditingEvent.confirmations?.[dbItem.department];
+      const isConfirmed = deptConf && deptConf.confirmed;
+      if (!isConfirmed) return false;
+
+      if (selectedPrintType === 'DEPARTMENT_COPY') {
         // ONLY the selected department
         return dbItem.department === selectedPrintDept;
       }
-      // OFFICE_COPY and STORE_COPY show all items
       return true;
     });
   }, [currentEditingEvent, eventItems, inventoryItems, inventoryWithAvailability, selectedPrintType, selectedPrintDept]);
@@ -627,9 +788,31 @@ export default function SalesRepresentativeModule({
                   </h2>
                   <p className="text-sm text-slate-500 font-medium">Enter customer demographics, reserve inventory dates, and verify stocks.</p>
                 </div>
+                <div className="flex items-center gap-3">
+                  <SimpleButton
+                    type="submit"
+                    form="event-booking-form"
+                    disabled={createEventMutation.isPending || updateEventMutation.isPending}
+                    variant="primary"
+                    className="flex items-center gap-1.5"
+                  >
+                    {currentEditingEvent._id ? 'Update Active Booking' : 'Register Draft Inquiry'}
+                  </SimpleButton>
+                  {currentEditingEvent._id && (
+                    <SimpleButton
+                      type="button"
+                      onClick={() => setIsPrintModalOpen(true)}
+                      variant="secondary"
+                      className="flex items-center gap-1.5"
+                    >
+                      <Printer className="w-4 h-4 text-blue-600 animate-pulse" />
+                      Configure & Print Slip
+                    </SimpleButton>
+                  )}
+                </div>
               </div>
 
-              <form onSubmit={handleSaveEvent} className="grid gap-6 xl:grid-cols-3">
+              <form id="event-booking-form" onSubmit={handleSaveEvent} className="grid gap-6 xl:grid-cols-3">
                 <div className="xl:col-span-2 space-y-6">
                   
                   {/* Customer & Event Details */}
@@ -660,9 +843,14 @@ export default function SalesRepresentativeModule({
                             const start = new Date(e.target.value);
                             const currentEnd = currentEditingEvent.eventDate?.end ? new Date(currentEditingEvent.eventDate.end) : null;
                             const end = currentEnd && currentEnd >= start ? currentEnd : start;
+                            const newConfirmations = { ...currentEditingEvent.confirmations };
+                            Object.keys(newConfirmations).forEach(key => {
+                              newConfirmations[key] = { ...newConfirmations[key], confirmed: false };
+                            });
                             setCurrentEditingEvent({
                               ...currentEditingEvent,
-                              eventDate: { start, end }
+                              eventDate: { start, end },
+                              confirmations: newConfirmations
                             });
                           }}
                         />
@@ -676,32 +864,64 @@ export default function SalesRepresentativeModule({
                             const end = new Date(e.target.value);
                             const currentStart = currentEditingEvent.eventDate?.start ? new Date(currentEditingEvent.eventDate.start) : null;
                             const start = currentStart && currentStart <= end ? currentStart : end;
+                            const newConfirmations = { ...currentEditingEvent.confirmations };
+                            Object.keys(newConfirmations).forEach(key => {
+                              newConfirmations[key] = { ...newConfirmations[key], confirmed: false };
+                            });
                             setCurrentEditingEvent({
                               ...currentEditingEvent,
-                              eventDate: { start, end }
+                              eventDate: { start, end },
+                              confirmations: newConfirmations
                             });
                           }}
                         />
                       </Field>
-                      <Field label="Setup Time (Start)">
-                        <TextInput
-                          type="time"
-                          value={currentEditingEvent.timeWindow?.start || '09:00'}
-                          onChange={(e) => setCurrentEditingEvent({
-                            ...currentEditingEvent,
-                            timeWindow: { start: e.target.value, end: currentEditingEvent.timeWindow?.end || '18:00' }
-                          })}
-                        />
-                      </Field>
-                      <Field label="Setup Time (End)">
-                        <TextInput
-                          type="time"
-                          value={currentEditingEvent.timeWindow?.end || '18:00'}
-                          onChange={(e) => setCurrentEditingEvent({
-                            ...currentEditingEvent,
-                            timeWindow: { start: currentEditingEvent.timeWindow?.start || '09:00', end: e.target.value }
-                          })}
-                        />
+                      <Field label="Setup Time Window">
+                        <div className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                          <div className="grid gap-3 md:grid-cols-[1fr_auto]">
+                            <div className="grid gap-3 sm:grid-cols-2">
+                              <TextInput
+                                type="time"
+                                value={formatTimeHHMM(currentEditingEvent.timeWindow?.start) || '09:00'}
+                                onChange={(e) => {
+                                  const newConfirmations = { ...currentEditingEvent.confirmations };
+                                  Object.keys(newConfirmations).forEach((key) => {
+                                    newConfirmations[key] = { ...newConfirmations[key], confirmed: false };
+                                  });
+                                  setCurrentEditingEvent({
+                                    ...currentEditingEvent,
+                                    timeWindow: { start: e.target.value, end: currentEditingEvent.timeWindow?.end || '18:00' },
+                                    confirmations: newConfirmations
+                                  });
+                                }}
+                              />
+                              <TextInput
+                                type="time"
+                                value={formatTimeHHMM(currentEditingEvent.timeWindow?.end) || '18:00'}
+                                onChange={(e) => {
+                                  const newConfirmations = { ...currentEditingEvent.confirmations };
+                                  Object.keys(newConfirmations).forEach((key) => {
+                                    newConfirmations[key] = { ...newConfirmations[key], confirmed: false };
+                                  });
+                                  setCurrentEditingEvent({
+                                    ...currentEditingEvent,
+                                    timeWindow: { start: currentEditingEvent.timeWindow?.start || '09:00', end: e.target.value },
+                                    confirmations: newConfirmations
+                                  });
+                                }}
+                              />
+                            </div>
+                            <SimpleButton
+                              type="button"
+                              variant="secondary"
+                              onClick={openSetupTimeModal}
+                              className="h-fit w-full md:w-auto px-3 py-2 text-xs font-semibold"
+                            >
+                              <Clock className="w-3.5 h-3.5" /> Timer
+                            </SimpleButton>
+                          </div>
+                          <p className="text-[10px] text-slate-500">Use the timer option to pick the setup window quickly.</p>
+                        </div>
                       </Field>
                       <Field label="Event Place / Venue">
                         <TextInput
@@ -743,15 +963,36 @@ export default function SalesRepresentativeModule({
                                 />
                                 <h4 className="text-sm font-extrabold text-slate-800">{dept.label}</h4>
                               </div>
-                              <SimpleButton
-                                type="button"
-                                variant="secondary"
-                                onClick={() => addEventItem(dept.key as DepartmentKey)}
-                                className="!py-1.5 !px-2.5 text-xs"
-                              >
-                                <Plus className="h-3.5 w-3.5" />
-                                Add Group Item
-                              </SimpleButton>
+                              <div className="flex items-center gap-2">
+                                {currentEditingEvent?._id && deptItems.length > 0 && (
+                                  <>
+                                    {currentEditingEvent.confirmations?.[dept.key]?.confirmed ? (
+                                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-100">
+                                        ✅ Confirmed
+                                      </span>
+                                    ) : (
+                                      <SimpleButton
+                                        type="button"
+                                        variant="success"
+                                        onClick={() => handleConfirmDept(dept.key)}
+                                        className="!py-1.5 !px-2.5 text-xs font-bold"
+                                        disabled={confirmDeptMutation.isPending || confirmingDepts[dept.key]}
+                                      >
+                                        {confirmingDepts[dept.key] ? 'Confirming...' : 'Confirm to Print'}
+                                      </SimpleButton>
+                                    )}
+                                  </>
+                                )}
+                                <SimpleButton
+                                  type="button"
+                                  variant="secondary"
+                                  onClick={() => addEventItem(dept.key as DepartmentKey)}
+                                  className="!py-1.5 !px-2.5 text-xs font-bold"
+                                >
+                                  <Plus className="h-3.5 w-3.5" />
+                                  Add Group Item
+                                </SimpleButton>
+                              </div>
                             </div>
 
                             {deptItems.length === 0 ? (
@@ -760,7 +1001,21 @@ export default function SalesRepresentativeModule({
                               <div className="space-y-3">
                                 {deptItems.map((item: any) => {
                                   const matchingInv = availableInventoryOptions.find(i => i._id === item.itemId || i.id === item.itemId);
-                                  const availStock = matchingInv ? (matchingInv as any).availableStock ?? matchingInv.currentStock : 0;
+                                  
+                                  // Find if there is a saved reservation for this item in the database
+                                  const savedItem = currentEditingEvent?.items?.find((i: any) => {
+                                    const savedId = i.itemId?._id || i.itemId;
+                                    return savedId === item.itemId;
+                                  });
+                                  const savedQty = savedItem ? savedItem.quantity : 0;
+
+                                  // Sum up all other local selections of this item in the checkout form (excluding current row)
+                                  const otherSelectedQty = eventItems
+                                    .filter((_, idx) => idx !== item.originalIndex && eventItems[idx].itemId === item.itemId)
+                                    .reduce((sum, i) => sum + (i.quantity || 0), 0);
+
+                                  const dbAvailStock = matchingInv ? (matchingInv as any).availableStock ?? matchingInv.currentStock : 0;
+                                  const availStock = Math.max(0, dbAvailStock + savedQty - otherSelectedQty);
 
                                   return (
                                     <div key={item.originalIndex} className="grid items-end gap-3 sm:grid-cols-[1.5fr_100px_120px_40px]">
@@ -770,11 +1025,20 @@ export default function SalesRepresentativeModule({
                                           onChange={(e) => updateEventItem(item.originalIndex, { itemId: e.target.value })}
                                         >
                                           <option value="">Choose item...</option>
-                                          {availableInventoryOptions.map((inv) => (
-                                            <option key={inv._id || inv.id} value={inv._id || inv.id}>
-                                              {inv.name} ({inv.itemCode})
-                                            </option>
-                                          ))}
+                                          {availableInventoryOptions
+                                            .filter((inv) => {
+                                              // Only show items that are not selected in other rows
+                                              const otherSelectedIds = eventItems
+                                                .filter((_, idx) => idx !== item.originalIndex)
+                                                .map(i => i.itemId)
+                                                .filter(Boolean) as string[];
+                                              return !otherSelectedIds.includes(inv._id || inv.id || '');
+                                            })
+                                            .map((inv) => (
+                                              <option key={inv._id || inv.id} value={inv._id || inv.id}>
+                                                {inv.name} ({inv.itemCode})
+                                              </option>
+                                            ))}
                                         </SelectInput>
                                       </Field>
                                       <Field label="Quantity">
@@ -787,13 +1051,19 @@ export default function SalesRepresentativeModule({
                                       </Field>
                                       <div className="flex flex-col gap-1 text-sm font-semibold">
                                         <span className="text-slate-500 text-xs">Available Stock</span>
-                                        <span className={`px-2 py-2 rounded-lg text-center text-xs ${
-                                          availStock >= item.quantity
-                                            ? 'bg-emerald-50 text-emerald-700'
-                                            : 'bg-red-50 text-red-700'
-                                        }`}>
-                                          {availStock} remaining
-                                        </span>
+                                        {availStock <= 0 ? (
+                                          <span className="px-2 py-2 rounded-lg text-center text-[10px] font-black bg-red-650 text-red-600 animate-pulse uppercase tracking-wider">
+                                            Out of Stock
+                                          </span>
+                                        ) : (
+                                          <span className={`px-2 py-2 rounded-lg text-center text-xs font-bold ${
+                                            availStock >= item.quantity
+                                              ? 'bg-emerald-50 text-emerald-700'
+                                              : 'bg-amber-50 text-amber-705 border border-amber-150'
+                                          }`}>
+                                            {availStock} remaining
+                                          </span>
+                                        )}
                                       </div>
                                       <button
                                         type="button"
@@ -817,73 +1087,10 @@ export default function SalesRepresentativeModule({
 
                 <div className="space-y-6">
                   
-                  {/* Action buttons */}
-                  <SectionCard title="Submit Options">
-                    <div className="grid gap-3">
-                      <SimpleButton type="submit" disabled={createEventMutation.isPending || updateEventMutation.isPending}>
-                        {currentEditingEvent._id ? 'Update Active Booking' : 'Register Draft Inquiry'}
-                      </SimpleButton>
-                    </div>
-                    {currentEditingEvent._id && (
-                      <div className="mt-4 border-t border-slate-100 pt-4 space-y-2 text-xs text-slate-500 font-medium">
-                        {currentEditingEvent.createdBy && (
-                          <p>Created by: {currentEditingEvent.createdBy.name || currentEditingEvent.createdBy.email}</p>
-                        )}
-                        {(currentEditingEvent as any).updatedBy && (
-                          <p>Last modified by: {(currentEditingEvent as any).updatedBy.name || (currentEditingEvent as any).updatedBy.email}</p>
-                        )}
-                      </div>
-                    )}
-                  </SectionCard>
+                
+                  
 
-                  {/* Department confirmations list */}
-                  {currentEditingEvent._id && (
-                    <>
-                      <SectionCard title="3. Separate Department confirmations">
-                        <p className="text-xs text-slate-400 font-semibold mb-4 leading-relaxed">
-                          Each department has a separate confirmation button. When confirmed, stock is deducted dynamically, and details are posted to all accounts.
-                        </p>
-                        <div className="space-y-3">
-                          {activeDepartments.map((dept) => {
-                            const conf = currentEditingEvent.confirmations?.[dept.key];
-                            const isConfirmed = conf?.confirmed;
-                            return (
-                              <div key={dept.key} className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/50 p-3">
-                                <div>
-                                  <p className="text-sm font-bold text-slate-800">{dept.label}</p>
-                                  {isConfirmed ? (
-                                    <p className="text-[10px] text-emerald-600 font-semibold">
-                                      ✅ Confirmed by: {conf.confirmedBy?.name || 'Authorized'}
-                                    </p>
-                                  ) : (
-                                    <p className="text-[10px] text-slate-400 font-medium">⏳ Awaiting confirmation</p>
-                                  )}
-                                </div>
-                                <div>
-                                  {isConfirmed ? (
-                                    <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg">
-                                      Confirmed
-                                    </span>
-                                  ) : (
-                                    <SimpleButton
-                                      type="button"
-                                      variant="success"
-                                      onClick={() => confirmDeptMutation.mutate({ eventId: currentEditingEvent._id!, dept: dept.key })}
-                                      className="!py-1.5 !px-2.5 text-xs"
-                                      disabled={confirmDeptMutation.isPending}
-                                    >
-                                      Confirm
-                                    </SimpleButton>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </SectionCard>
-
-                    </>
-                  )}
+                  {/* Inline group confirmations are now integrated into the headers above */}
 
                   {/* Live Pricing Preview */}
                   <SectionCard title="Live Pricing Preview">
@@ -907,49 +1114,7 @@ export default function SalesRepresentativeModule({
                     </div>
                   </SectionCard>
 
-                  {/* Dynamic Printing Copier */}
-                  {currentEditingEvent._id && (
-                    <SectionCard title="4. Printing configurations">
-                      <p className="text-xs text-slate-400 font-semibold mb-4">
-                        Billing copies will reflect items filtered based on confirmation states.
-                      </p>
-                      <div className="grid gap-3">
-                        <Field label="Print Document Type">
-                          <SelectInput
-                            value={selectedPrintType}
-                            onChange={(e) => setSelectedPrintType(e.target.value as any)}
-                          >
-                            <option value="OFFICE_COPY">Office Copy (Complete Items)</option>
-                            <option value="CUSTOMER_COPY">Customer Copy (Confirmed Depts Only)</option>
-                            <option value="CUSTOMER_COPY_EXTRA">Customer Copy + Extra Copy</option>
-                            <option value="STORE_COPY">Store / Warehouse Copy</option>
-                            <option value="DEPARTMENT_COPY">Department Copy (Single Dept)</option>
-                          </SelectInput>
-                        </Field>
-
-                        {selectedPrintType === 'DEPARTMENT_COPY' && (
-                          <Field label="Select Target Department">
-                            <SelectInput
-                              value={selectedPrintDept}
-                              onChange={(e) => setSelectedPrintDept(e.target.value as any)}
-                            >
-                              {departments.map(d => <option key={d.key} value={d.key}>{d.label}</option>)}
-                            </SelectInput>
-                          </Field>
-                        )}
-
-                        <SimpleButton
-                          type="button"
-                          onClick={() => {
-                            window.setTimeout(() => window.print(), 100);
-                          }}
-                        >
-                          <Printer className="h-4.5 w-4.5" />
-                          Print Custom Copy
-                        </SimpleButton>
-                      </div>
-                    </SectionCard>
-                  )}
+                  {/* Printing configurations are now managed inside a premium modal accessed via the top 'Configure & Print Slip' button */}
                 </div>
               </form>
             </>
@@ -999,7 +1164,7 @@ export default function SalesRepresentativeModule({
                         <th className="px-4 py-3 font-semibold">Event Dates</th>
                         <th className="px-4 py-3 font-semibold">Time Slot</th>
                         <th className="px-4 py-3 font-semibold">Status</th>
-                        <th className="px-4 py-3 font-semibold">Actions</th>
+                        <th className="px-4 py-3 font-semibold text-right">Actions</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1022,8 +1187,8 @@ export default function SalesRepresentativeModule({
                               {event.eventStatus}
                             </span>
                           </td>
-                          <td className="px-4 py-3">
-                            <div className="flex items-center gap-2">
+                          <td className="px-4 py-3 text-right">
+                             <div className="flex items-center justify-end gap-2">
                               <SimpleButton variant="secondary" onClick={() => handleStartEdit(event)} className="!py-1 !px-2 text-xs">
                                 Edit Details
                               </SimpleButton>
@@ -1081,7 +1246,7 @@ export default function SalesRepresentativeModule({
                         <th className="px-4 py-3 font-semibold">Venue Place</th>
                         <th className="px-4 py-3 font-semibold">Event Date</th>
                         <th className="px-4 py-3 font-semibold">Status</th>
-                        <th className="px-4 py-3 font-semibold">Actions</th>
+                        <th className="px-4 py-3 font-semibold text-right">Actions</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1097,10 +1262,29 @@ export default function SalesRepresentativeModule({
                               {event.eventStatus}
                             </span>
                           </td>
-                          <td className="px-4 py-3">
-                            <div className="flex gap-2">
-                              <SimpleButton variant="secondary" onClick={() => handleStartEdit(event)} className="!py-1 !px-2 text-xs">
-                                Reprint/Duplicate
+                          <td className="px-4 py-3 text-right">
+                             <div className="flex items-center justify-end gap-2">
+                              <SimpleButton
+                                variant="secondary"
+                                onClick={() => setSelectedViewEvent(event)}
+                                className="!py-1 !px-2.5 text-xs font-bold"
+                              >
+                                View Details
+                              </SimpleButton>
+                              <SimpleButton
+                                variant="success"
+                                onClick={() => handleStartPrint(event)}
+                                className="!py-1 !px-2.5 text-xs font-bold flex items-center gap-1"
+                              >
+                                <Printer className="w-3.5 h-3.5" />
+                                Print Slip
+                              </SimpleButton>
+                              <SimpleButton
+                                variant="secondary"
+                                onClick={() => handleStartEdit(event)}
+                                className="!py-1 !px-2 text-xs text-blue-650 hover:text-blue-700 hover:underline font-bold"
+                              >
+                                Edit/Duplicate
                               </SimpleButton>
                             </div>
                           </td>
@@ -1128,12 +1312,33 @@ export default function SalesRepresentativeModule({
                 <p className="text-sm text-slate-500 font-medium">Check available inventory quantities dynamically over custom event windows.</p>
               </div>
 
-              <div className="grid gap-3 rounded-xl border border-slate-200 bg-white p-5 shadow-xs print:hidden">
-                <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-5">
+              <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-xs print:hidden space-y-4">
+                {/* Dynamic search bar */}
+                <div className="relative flex items-center print:hidden">
+                  <Search className="absolute left-3 h-4 w-4 text-slate-400" />
+                  <input
+                    className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-12 text-sm text-slate-800 outline-none focus:border-blue-500/20 focus:ring-2 focus:ring-blue-500/20"
+                    placeholder="Search items by name or item code instantly..."
+                    value={freeStockSearch}
+                    onChange={(e) => setFreeStockSearch(e.target.value)}
+                  />
+                  {freeStockSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setFreeStockSearch('')}
+                      className="absolute right-3 text-xs font-bold text-slate-400 hover:text-slate-600 cursor-pointer transition"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+
+                {/* Filters Row */}
+                <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-5 pt-3 border-t border-slate-100">
                   <Field label="Item Group / Department">
                     <SelectInput value={freeStockDept} onChange={(e) => setFreeStockDept(e.target.value)}>
                       <option value="All Departments">All Departments</option>
-                      {departments.map(d => <option key={d.key} value={d.key}>{d.label}</option>)}
+                      {activeDepartments.map(d => <option key={d.key || d._id} value={d.key}>{d.label}</option>)}
                     </SelectInput>
                   </Field>
                   <Field label="From Date">
@@ -1173,14 +1378,18 @@ export default function SalesRepresentativeModule({
                             <td className="px-4 py-3 font-bold text-slate-900">{item.name}</td>
                             <td className="px-4 py-3 text-slate-500 font-mono font-bold">{item.itemCode}</td>
                             <td className="px-4 py-3 text-slate-600 font-semibold">
-                              {departments.find(d => d.key === item.department)?.label}
+                              {activeDepartments.find(d => d.key === item.department)?.label || item.department}
                             </td>
                             <td className="px-4 py-3 text-center">
-                              <span className={`inline-flex rounded-lg px-2.5 py-1 text-xs font-bold ${
-                                item.availableStock > 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'
-                              }`}>
-                                {item.availableStock} available
-                              </span>
+                              {item.availableStock > 0 ? (
+                                <span className="inline-flex rounded-lg px-2.5 py-1 text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-150">
+                                  {item.availableStock} available
+                                </span>
+                              ) : (
+                                <span className="inline-flex rounded-lg px-2.5 py-1 text-[10px] font-black bg-red-650 text-red-600 animate-pulse uppercase tracking-wider">
+                                  Out of Stock
+                                </span>
+                              )}
                             </td>
                             <td className="px-4 py-3 text-center text-slate-500 font-bold">{item.reservedStock || 0}</td>
                             <td className="px-4 py-3 text-center text-slate-700 font-bold">{item.currentStock}</td>
@@ -1477,7 +1686,7 @@ export default function SalesRepresentativeModule({
               <div className="space-y-12">
                 <div>
                   <div className="text-right text-[10px] uppercase font-bold text-slate-400 mb-2">CUSTOMER ORIGINAL COPY</div>
-                  <PrintSlipTemplate currentEditingEvent={currentEditingEvent} selectedPrintType="CUSTOMER_COPY" printItemsFiltered={printItemsFiltered} printTotals={printTotals} departments={departments} />
+                  <PrintSlipTemplate currentEditingEvent={currentEditingEvent} selectedPrintType="CUSTOMER_COPY" printItemsFiltered={printItemsFiltered} printTotals={printTotals} departments={activeDepartments as any} />
                 </div>
                 
                 {/* dashed divider line */}
@@ -1487,12 +1696,275 @@ export default function SalesRepresentativeModule({
 
                 <div>
                   <div className="text-right text-[10px] uppercase font-bold text-slate-400 mb-2">EXTRA BILLING COPY</div>
-                  <PrintSlipTemplate currentEditingEvent={currentEditingEvent} selectedPrintType="CUSTOMER_COPY" printItemsFiltered={printItemsFiltered} printTotals={printTotals} departments={departments} />
+                  <PrintSlipTemplate currentEditingEvent={currentEditingEvent} selectedPrintType="CUSTOMER_COPY" printItemsFiltered={printItemsFiltered} printTotals={printTotals} departments={activeDepartments as any} />
                 </div>
               </div>
             ) : (
-              <PrintSlipTemplate currentEditingEvent={currentEditingEvent} selectedPrintType={selectedPrintType} printItemsFiltered={printItemsFiltered} printTotals={printTotals} departments={departments} />
+              <PrintSlipTemplate currentEditingEvent={currentEditingEvent} selectedPrintType={selectedPrintType} printItemsFiltered={printItemsFiltered} printTotals={printTotals} departments={activeDepartments as any} />
             )}
+          </div>
+        )}
+
+        {/* MODAL: Printing Configuration Setup */}
+        {isPrintModalOpen && currentEditingEvent && (
+          <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4 md:p-6 animate-in fade-in duration-200" role="dialog" aria-modal="true">
+            {/* Clickable backdrop */}
+            <div className="absolute inset-0 cursor-default" onClick={() => setIsPrintModalOpen(false)} aria-hidden="true" />
+
+            {/* Main modal container */}
+            <div className="relative bg-white border border-slate-200/80 rounded-2xl shadow-2xl w-full max-w-md flex flex-col z-10 animate-in zoom-in-95 duration-200">
+              
+              {/* Modal Header */}
+              <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                <div className="flex items-center gap-2">
+                  <Printer className="w-5 h-5 text-blue-600" />
+                  <h3 className="font-extrabold text-slate-800 text-sm leading-tight">Print Slip Configurations</h3>
+                </div>
+                <button 
+                  onClick={() => setIsPrintModalOpen(false)} 
+                  className="w-7 h-7 rounded-full border border-slate-200 bg-white hover:bg-slate-50 text-slate-400 hover:text-slate-650 flex items-center justify-center font-bold text-xs cursor-pointer transition shadow-xs outline-none focus:ring-2 focus:ring-blue-500/20"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-6 space-y-4">
+                <p className="text-xs text-slate-500 font-medium leading-relaxed">
+                  Configure billing copies, filter items based on confirmation states, and print dynamic slips instantly.
+                </p>
+
+                <div className="space-y-4">
+                  <Field label="Print Document Type">
+                    <SelectInput
+                      value={selectedPrintType}
+                      onChange={(e) => setSelectedPrintType(e.target.value as any)}
+                    >
+                      <option value="OFFICE_COPY">Office Copy (Complete Items)</option>
+                      <option value="CUSTOMER_COPY">Customer Copy (Confirmed Depts Only)</option>
+                      <option value="CUSTOMER_COPY_EXTRA">Customer Copy + Extra Copy</option>
+                      <option value="STORE_COPY">Store / Warehouse Copy</option>
+                      <option value="DEPARTMENT_COPY">Department Copy (Single Dept)</option>
+                    </SelectInput>
+                  </Field>
+
+                  {selectedPrintType === 'DEPARTMENT_COPY' && (
+                    <Field label="Select Target Department">
+                      <SelectInput
+                        value={selectedPrintDept}
+                        onChange={(e) => setSelectedPrintDept(e.target.value as any)}
+                      >
+                        {activeDepartments.map(d => <option key={d.key || d._id} value={d.key}>{d.label}</option>)}
+                      </SelectInput>
+                    </Field>
+                  )}
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-3 rounded-b-2xl">
+                <SimpleButton
+                  type="button"
+                  variant="secondary"
+                  onClick={() => setIsPrintModalOpen(false)}
+                  className="text-xs"
+                >
+                  Cancel
+                </SimpleButton>
+                <SimpleButton
+                  type="button"
+                  onClick={() => {
+                    setIsPrintModalOpen(false);
+                    window.setTimeout(() => window.print(), 150);
+                  }}
+                  className="text-xs flex items-center gap-1.5"
+                >
+                  <Printer className="w-4 h-4" />
+                  Print Custom Copy
+                </SimpleButton>
+              </div>
+
+            </div>
+          </div>
+        )}
+
+        {/* MODAL: Read-Only Event Details View */}
+        {selectedViewEvent && (
+          <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4 md:p-6 animate-in fade-in duration-200" role="dialog" aria-modal="true">
+            {/* Clickable backdrop */}
+            <div className="absolute inset-0 cursor-default" onClick={() => setSelectedViewEvent(null)} aria-hidden="true" />
+
+            {/* Main modal container */}
+            <div className="relative bg-white border border-slate-200/80 rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[85vh] overflow-hidden z-10 animate-in zoom-in-95 duration-200">
+              
+              {/* Modal Header */}
+              <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                <div className="flex items-center gap-2">
+                  <Calendar className="w-5 h-5 text-blue-600 animate-pulse" />
+                  <div>
+                    <h3 className="font-extrabold text-slate-800 text-sm leading-tight">Event Booking Breakdown</h3>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">Reference ID: {selectedViewEvent._id}</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setSelectedViewEvent(null)} 
+                  className="w-7 h-7 rounded-full border border-slate-200 bg-white hover:bg-slate-50 text-slate-450 hover:text-slate-600 flex items-center justify-center font-bold text-xs cursor-pointer transition shadow-xs outline-none focus:ring-2 focus:ring-blue-500/20"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Modal Body - Scrollable */}
+              <div className="p-6 overflow-y-auto space-y-6 custom-scrollbar text-xs">
+                
+                {/* Client & Place Demographics */}
+                <div className="bg-slate-50 border border-slate-150 p-4 rounded-xl grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-[9px] uppercase tracking-wider text-slate-400 font-bold">Client / Customer</p>
+                    <p className="font-extrabold text-slate-900 text-sm mt-1">{selectedViewEvent.customerName}</p>
+                    
+                    <p className="text-[9px] uppercase tracking-wider text-slate-400 font-bold mt-3">Venue / Setup Place</p>
+                    <p className="font-bold text-slate-700 mt-1 flex items-center gap-1">
+                      <MapPin className="w-3.5 h-3.5 text-red-500 shrink-0" />
+                      {selectedViewEvent.place}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[9px] uppercase tracking-wider text-slate-400 font-bold">Event Dates & Times</p>
+                    <p className="font-bold text-slate-800 mt-1 flex items-center gap-1">
+                      <Calendar className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                      {new Date(selectedViewEvent.eventDate.start).toLocaleDateString('en-IN')} to {new Date(selectedViewEvent.eventDate.end).toLocaleDateString('en-IN')}
+                    </p>
+                    <p className="text-slate-500 mt-0.5 font-semibold pl-4.5">
+                      ⏳ Setup: {selectedViewEvent.timeWindow?.start || '09:00'} - {selectedViewEvent.timeWindow?.end || '18:00'}
+                    </p>
+
+                    <p className="text-[9px] uppercase tracking-wider text-slate-400 font-bold mt-2">Program Type & Status</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="font-bold text-slate-700">{selectedViewEvent.program}</span>
+                      <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                        selectedViewEvent.eventStatus === 'CONFIRMED' || selectedViewEvent.eventStatus === 'APPROVED'
+                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                          : 'bg-amber-50 text-amber-700 border border-amber-100'
+                      }`}>
+                        {selectedViewEvent.eventStatus}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Items breakdown list */}
+                <div className="space-y-2">
+                  <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Reserved Equipment & Services</h4>
+                  <div className="overflow-x-auto rounded-xl border border-slate-200">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-slate-200 text-slate-455 font-bold uppercase tracking-wider text-[9px]">
+                          <th className="p-3 pl-4">Item Name / Details</th>
+                          <th className="p-3">Department</th>
+                          <th className="p-3 text-right">Quantity</th>
+                          <th className="p-3 text-right">Rate</th>
+                          <th className="p-3 pr-4 text-right">Subtotal</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(selectedViewEvent.items || []).map((itemRef, idx) => {
+                          const dbItem = itemRef.itemId as any;
+                          if (!dbItem) return null;
+                          const rate = dbItem.rentalRate || 0;
+                          const total = itemRef.quantity * rate;
+                          return (
+                            <tr key={idx} className="border-b border-slate-100/70 hover:bg-slate-50/20 last:border-b-0">
+                              <td className="p-3 pl-4 font-bold text-slate-800">{dbItem.name}</td>
+                              <td className="p-3">
+                                <span className="text-[10px] bg-slate-100 text-slate-500 font-extrabold uppercase px-1.5 py-0.5 rounded">
+                                  {dbItem.department?.replace('_', ' ') || 'RENTAL'}
+                                </span>
+                              </td>
+                              <td className="p-3 text-right font-extrabold text-slate-700">{itemRef.quantity}</td>
+                              <td className="p-3 text-right text-slate-500 font-semibold">Rs. {rate.toLocaleString()}</td>
+                              <td className="p-3 pr-4 text-right font-extrabold text-slate-950">Rs. {total.toLocaleString()}</td>
+                            </tr>
+                          );
+                        })}
+                        {(selectedViewEvent.items || []).length === 0 && (
+                          <tr>
+                            <td colSpan={5} className="p-6 text-center text-slate-400 italic">No reserved equipment items found.</td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Confirmations breakdown */}
+                <div className="space-y-2">
+                  <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Department Confirmation Checks</h4>
+                  <div className="grid gap-2 sm:grid-cols-3">
+                    {activeDepartments.map(dept => {
+                      const conf = selectedViewEvent.confirmations?.[dept.key];
+                      const isConfirmed = conf?.confirmed;
+                      return (
+                        <div key={dept.key} className={`rounded-xl p-3 border flex flex-col justify-between ${
+                          isConfirmed ? 'bg-emerald-50/40 border-emerald-100 text-emerald-800' : 'bg-slate-50 border-slate-150 text-slate-500'
+                        }`}>
+                          <p className="font-bold text-[11px] truncate">{dept.label}</p>
+                          <p className="text-[9px] font-medium mt-1 leading-tight">
+                            {isConfirmed ? (
+                              <span>✅ Confirmed by {conf.confirmedBy?.name || 'Staff'}</span>
+                            ) : (
+                              <span>⏳ Awaiting Confirmation</span>
+                            )}
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Audit Context */}
+                <div className="text-[10px] text-slate-400 font-semibold border-t border-slate-100 pt-4 flex flex-wrap justify-between gap-2">
+                  <span>Created By: {selectedViewEvent.createdBy?.name || selectedViewEvent.createdBy?.email || 'Authorized Representative'}</span>
+                  {selectedViewEvent.updatedAt && (
+                    <span>Last Synced: {new Date(selectedViewEvent.updatedAt).toLocaleString()}</span>
+                  )}
+                </div>
+
+              </div>
+
+              {/* Modal Footer */}
+              <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-between items-center rounded-b-2xl">
+                <div className="flex flex-col text-slate-605">
+                  <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400 leading-none">Invoice Grand Total</span>
+                  <span className="text-base font-black text-slate-900 mt-1">
+                    Rs. {viewEventTotals.grandTotal.toLocaleString('en-IN')}
+                  </span>
+                </div>
+                <div className="flex gap-2">
+                  <SimpleButton
+                    type="button"
+                    variant="secondary"
+                    onClick={() => {
+                      const viewEvent = selectedViewEvent;
+                      setSelectedViewEvent(null);
+                      handleStartPrint(viewEvent);
+                    }}
+                    className="text-xs flex items-center gap-1.5"
+                  >
+                    <Printer className="w-4 h-4 text-blue-600" />
+                    Configure & Print
+                  </SimpleButton>
+                  <SimpleButton
+                    type="button"
+                    onClick={() => setSelectedViewEvent(null)}
+                    className="text-xs"
+                  >
+                    Close Directory
+                  </SimpleButton>
+                </div>
+              </div>
+
+            </div>
           </div>
         )}
 
@@ -1523,6 +1995,14 @@ export default function SalesRepresentativeModule({
             </div>
           </div>
         )}
+
+        <TimeRangePickerModal
+          isOpen={isSetupTimeModalOpen}
+          onClose={() => setIsSetupTimeModalOpen(false)}
+          initialStartTime={formatTimeHHMM(currentEditingEvent?.timeWindow?.start) || '09:00'}
+          initialEndTime={formatTimeHHMM(currentEditingEvent?.timeWindow?.end) || '18:00'}
+          onSave={handleSetupTimeSave}
+        />
     </>
   );
   if (hideLayout) {
@@ -1537,7 +2017,7 @@ export default function SalesRepresentativeModule({
   }
 
   return (
-    <AuthGuard allowedRoles={['SALES_REPRESENTATIVE', 'REPRESENTATIVE', 'ADMIN']}>
+    <AuthGuard>
       <div className="min-h-screen bg-slate-50 text-slate-800 antialiased font-sans">
         
         {/* Navigation Top Header */}
@@ -1552,13 +2032,7 @@ export default function SalesRepresentativeModule({
                 <Menu className="h-5 w-5 text-slate-700" />
               </button>
               <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600 text-lg font-bold text-white shadow-md shadow-blue-600/10">
-                  O
-                </div>
-                <div>
-                  <h1 className="text-base font-bold tracking-tight text-slate-900 sm:text-lg">ONUS EVENT</h1>
-                  <p className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Sales Representative ERP</p>
-                </div>
+                <img src="/logo.png" alt="Onus Events" className="h-10 w-auto" />
               </div>
             </div>
 

@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '../../store/useAuthStore';
 import { getInventoryApi, getEventsApi } from '../../services/api';
+import { getUsers } from '../../utils/apiClient';
 import { 
   Plus, 
   LayoutDashboard, 
@@ -88,6 +89,13 @@ export default function AdminDashboard() {
     placeholderData: []
   });
 
+  // Load real users from database
+  const { data: usersData = [] } = useQuery<User[]>({
+    queryKey: ['users'],
+    queryFn: () => getUsers(),
+    placeholderData: []
+  });
+
   // Local Preset Fallbacks
   const mockCustomers = [
     { id: '1', name: 'Alwin Joy', place: 'Kochi', contact: '9876543210', historyCount: 2 },
@@ -95,12 +103,12 @@ export default function AdminDashboard() {
     { id: '3', name: 'John Doe', place: 'Calicut', contact: '9876543212', historyCount: 1 }
   ];
 
-  const activeUsers: User[] = [
+  const activeUsers = (usersData.length > 0 ? usersData : [
     { id: 'usr-1', username: 'akhil_sales', fullName: 'Akhil Raj', role: 'SALES_REPRESENTATIVE', email: 'akhil@onus.com', monthlyBilling: 145000 },
     { id: 'usr-2', username: 'neeraj_rep', fullName: 'Neeraj Kumar', role: 'SALES_REPRESENTATIVE', email: 'neeraj@onus.com', monthlyBilling: 88000 },
     { id: 'usr-3', username: 'vinu_captain', fullName: 'Vinu Captain', role: 'SITE_INCHARGE', email: 'vinu@onus.com' },
     { id: 'usr-4', username: 'sabu_loading', fullName: 'Sabu Loader', role: 'LOADING_STAFF', email: 'sabu@onus.com' }
-  ];
+  ]) as User[];
 
   const activeItems = (inventoryData.length > 0 ? inventoryData : [
     { itemCode: 'DEC-001', name: 'Luxury Counter Decor Floral Panel', department: 'COUNTER_DECOR', currentStock: 12, rentalRate: 1500, saleRate: 8000, subItems: ['DEC-002'], imageUrl: '', isActive: true, orderList: ['5f9f1b9b9b9b9b9b9b9b9b9b'] },
@@ -125,8 +133,8 @@ export default function AdminDashboard() {
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'create-event', label: 'Create Events', icon: Plus },
     { id: 'past-events', label: 'Past Events', icon: History },
-    { id: 'free-stock', label: 'Free Stock', icon: Package },
     { id: 'ledgers', label: 'Ledgers / Customer A/C', icon: Receipt },
+    { id: 'free-stock', label: 'Free Stock', icon: Package },
     { id: 'inventory', label: 'Inventory', icon: Wrench },
     { id: 'representatives', label: 'Representatives', icon: Users },
     { id: 'captains', label: 'Captains', icon: BadgeCheck },
@@ -135,7 +143,7 @@ export default function AdminDashboard() {
   ];
 
   return (
-    <AuthGuard allowedRoles={['ADMIN']}>
+    <AuthGuard>
       <div className="min-h-screen bg-slate-50 text-slate-900 font-sans">
         <header className="sticky top-0 z-30 border-b border-slate-200 bg-white px-4 py-3 print:hidden">
           <div className="flex items-center justify-between">
@@ -143,9 +151,11 @@ export default function AdminDashboard() {
               <button className="rounded-md border border-slate-300 p-2 lg:hidden" onClick={() => setMobileOpen(true)} aria-label="Open menu">
                 <Menu className="h-5 w-5" />
               </button>
-              <div>
-                <h1 className="text-lg font-semibold"> Admin Console</h1>
-                <p className="text-xs text-slate-500">ONUS Event Rental ERP</p>
+              <div className="flex items-center gap-3">
+                <img src="/logo.png" alt="Onus Events" className="h-10 w-auto" />
+                <div>
+                  <h1 className="text-lg font-semibold"> Admin Console</h1>
+                </div>
               </div>
             </div>
             <div className="flex items-center gap-3">

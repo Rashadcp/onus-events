@@ -150,8 +150,8 @@ router.put('/events/:id/status', authGuard, roleGuard(['ADMIN', 'SALES_REPRESENT
 // Retrieve logistics logs for an event (Available to all logged-in roles)
 router.get('/logistics/:eventId', authGuard, getLogisticsLog);
 
-// Create or update a logistics log (Restricted to Admin and Loading Staff)
-router.post('/logistics/:eventId', authGuard, roleGuard(['ADMIN', 'LOADING_STAFF']), updateLogisticsLog);
+// Create or update a logistics log (Restricted to Admin, Loading Staff, Representative, and Site Incharge)
+router.post('/logistics/:eventId', authGuard, roleGuard(['ADMIN', 'LOADING_STAFF', 'SALES_REPRESENTATIVE', 'SITE_INCHARGE']), updateLogisticsLog);
 
 
 /**

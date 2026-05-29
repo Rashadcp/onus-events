@@ -4,6 +4,7 @@ import mongoose from 'mongoose';
 import Event from '../../models/Event';
 import Item, { ItemDepartment } from '../../models/Item';
 import BillingDocument from '../../models/BillingDocument';
+import ItemGroup from '../../models/ItemGroup';
 import { 
   checkBatchAvailability, 
   createReservations, 
@@ -312,16 +313,23 @@ export async function confirmDepartment(req: Request, res: Response) {
       return res.status(401).json({ error: 'Unauthorized user session context.' });
     }
 
-    const validDepartments: ItemDepartment[] = [
+    // Fetch all active dynamic item group keys from database
+    const dynamicGroups = await ItemGroup.find({ isActive: true });
+    const dynamicKeys = dynamicGroups.map((g) => g.key.toUpperCase());
+
+    const validDepartments = Array.from(new Set([
       'COUNTER_DECOR',
       'CLOTH_DECOR',
       'RENTAL_ITEMS',
       'EXPENSE_CHARGES',
       'STAFF',
-      'OUTSIDE_RENTAL'
-    ];
+      'OUTSIDE_RENTAL',
+      ...dynamicKeys
+    ]));
 
-    if (!validDepartments.includes(department)) {
+    const deptUpper = (department || '').toUpperCase();
+
+    if (!validDepartments.includes(deptUpper)) {
       await session.abortTransaction();
       session.endSession();
       return res.status(400).json({ error: 'Invalid department code.' });
@@ -334,19 +342,13 @@ export async function confirmDepartment(req: Request, res: Response) {
       return res.status(404).json({ error: 'Event not found.' });
     }
 
-    // Verify if already confirmed
-    const dptConf = (event.confirmations as any)[department];
-    if (dptConf && dptConf.confirmed) {
-      await session.abortTransaction();
-      session.endSession();
-      return res.status(400).json({ error: `Department ${department} is already confirmed.` });
-    }
+    // Already confirmed check is omitted to support robust re-confirmations when items are updated
 
     // Transition reservation statuses for this department to CONFIRMED
-    await confirmDepartmentReservations(event._id, department, session);
+    await confirmDepartmentReservations(event._id, deptUpper, session);
 
     // Update confirmation flag in the event document
-    const updatePath = `confirmations.${department}`;
+    const updatePath = `confirmations.${deptUpper}`;
     const updatePayload = {
       [`${updatePath}.confirmed`]: true,
       [`${updatePath}.confirmedBy`]: new mongoose.Types.ObjectId(userId),
@@ -427,11 +429,12 @@ export async function updateEvent(req: Request, res: Response) {
     // 1. Release all old reservations first
     await cancelEventReservations(event._id, session);
 
-    // 2. Perform availability overlap conflict check on the new parameters
+    // 2. Perform availability overlap conflict check on the new parameters (excluding current event's own reservations)
     const { isFullyAvailable, results } = await checkBatchAvailability(
       validated.items,
       new Date(validated.eventDate.start),
-      new Date(validated.eventDate.end)
+      new Date(validated.eventDate.end),
+      event._id.toString()
     );
 
     if (!isFullyAvailable) {
@@ -460,7 +463,14 @@ export async function updateEvent(req: Request, res: Response) {
       });
     }
 
-    // 3. Save new event details
+    // 3. Save new event details and reset confirmations back to false since items/dates were updated
+    const resetConfirmations: any = {};
+    if (event.confirmations) {
+      Object.keys(event.confirmations).forEach((key) => {
+        resetConfirmations[key] = { confirmed: false };
+      });
+    }
+
     const updatedEvent = await Event.findOneAndUpdate(
       { _id: id },
       {
@@ -475,7 +485,8 @@ export async function updateEvent(req: Request, res: Response) {
           program: validated.program,
           items: validated.items,
           eventStatus: validated.eventStatus || event.eventStatus,
-          updatedBy: new mongoose.Types.ObjectId(userId)
+          updatedBy: new mongoose.Types.ObjectId(userId),
+          confirmations: resetConfirmations
         }
       },
       { new: true, session }

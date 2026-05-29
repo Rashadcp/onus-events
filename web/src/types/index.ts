@@ -70,6 +70,8 @@ export interface Event {
     OUTSIDE_RENTAL?: DepartmentConfirmation;
   } | any;
   assignedCaptain?: string | any;
+  createdAt?: string | Date;
+  updatedAt?: string | Date;
 }
 
 export interface Customer {

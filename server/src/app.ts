@@ -23,7 +23,11 @@ app.use(helmet());
 // CORS Whitelisting
 const allowedOrigins = [
   'http://localhost:3000', // Standard Next.js Dev Client
-  'http://127.0.0.1:3000'
+  'http://127.0.0.1:3000',
+  'http://localhost:3001', // Next.js Dev Port Fallbacks
+  'http://127.0.0.1:3001',
+  'http://localhost:3002',
+  'http://127.0.0.1:3002'
 ];
 
 app.use(
@@ -372,6 +376,17 @@ mongoose
   .connect(MONGODB_URI)
   .then(async () => {
     console.log('🌐 Connected successfully to MongoDB Database.');
+    
+    // Drop legacy username unique index to avoid 500 duplicate key errors
+    try {
+      const db = mongoose.connection.db;
+      if (db) {
+        await db.collection('users').dropIndex('username_1');
+        console.log('🗑️ Legacy unique index "username_1" dropped successfully.');
+      }
+    } catch (err) {
+      // Index did not exist or was already dropped, silent bypass
+    }
     
     // Seed default administrator if required
     await seedAdminUser();

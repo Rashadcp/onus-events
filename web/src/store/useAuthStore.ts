@@ -11,6 +11,20 @@ interface AuthState {
   initializeSession: () => void;
 }
 
+function getCookieOptions() {
+  if (typeof window === 'undefined') return '';
+
+  const isSecureContext = window.location.protocol === 'https:';
+  return `; path=/; max-age=604800; SameSite=Lax${isSecureContext ? '; Secure' : ''}`;
+}
+
+function getExpiredCookieOptions() {
+  if (typeof window === 'undefined') return '';
+
+  const isSecureContext = window.location.protocol === 'https:';
+  return `; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax${isSecureContext ? '; Secure' : ''}`;
+}
+
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   accessToken: null,
@@ -28,8 +42,8 @@ export const useAuthStore = create<AuthState>((set) => ({
     if (typeof window !== 'undefined') {
       localStorage.setItem('accessToken', token);
       localStorage.setItem('user', JSON.stringify(mappedUser));
-      document.cookie = `accessToken=${token}; path=/; max-age=604800; SameSite=Lax; Secure`;
-      document.cookie = `userRole=${mappedUser.role}; path=/; max-age=604800; SameSite=Lax; Secure`;
+      document.cookie = `accessToken=${token}${getCookieOptions()}`;
+      document.cookie = `userRole=${mappedUser.role}${getCookieOptions()}`;
     }
 
     set({
@@ -44,8 +58,8 @@ export const useAuthStore = create<AuthState>((set) => ({
     if (typeof window !== 'undefined') {
       localStorage.removeItem('accessToken');
       localStorage.removeItem('user');
-      document.cookie = "accessToken=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax; Secure";
-      document.cookie = "userRole=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax; Secure";
+      document.cookie = `accessToken=${getExpiredCookieOptions()}`;
+      document.cookie = `userRole=${getExpiredCookieOptions()}`;
     }
     
     set({
@@ -77,8 +91,8 @@ export const useAuthStore = create<AuthState>((set) => ({
         };
         
         if (typeof window !== 'undefined') {
-          document.cookie = `accessToken=${token}; path=/; max-age=604800; SameSite=Lax; Secure`;
-          document.cookie = `userRole=${mappedUser.role}; path=/; max-age=604800; SameSite=Lax; Secure`;
+          document.cookie = `accessToken=${token}${getCookieOptions()}`;
+          document.cookie = `userRole=${mappedUser.role}${getCookieOptions()}`;
         }
         
         set({

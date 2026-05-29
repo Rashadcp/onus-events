@@ -24,7 +24,7 @@ export function UserManagementTable({ role, roleDisplayName, initialUsers = [], 
   const [newStaffUser, setNewStaffUser] = useState('');
   const [newStaffName, setNewStaffName] = useState('');
   const [newStaffEmail, setNewStaffEmail] = useState('');
-  const [newStaffPass, setNewStaffPass] = useState('123');
+  const [newStaffPass, setNewStaffPass] = useState('onus123');
 
   // Edit State
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -51,7 +51,7 @@ export function UserManagementTable({ role, roleDisplayName, initialUsers = [], 
       });
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['users', role] });
+      queryClient.invalidateQueries({ queryKey: ['users'] });
       toast.success(`New ${roleDisplayName} registered successfully!`);
       setIsRegModalOpen(false);
       resetRegForm();
@@ -66,7 +66,7 @@ export function UserManagementTable({ role, roleDisplayName, initialUsers = [], 
       return updateUser(id, payload);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['users', role] });
+      queryClient.invalidateQueries({ queryKey: ['users'] });
       toast.success(`${roleDisplayName} details updated successfully!`);
       setIsEditModalOpen(false);
     },
@@ -80,7 +80,7 @@ export function UserManagementTable({ role, roleDisplayName, initialUsers = [], 
       return deleteUser(id);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['users', role] });
+      queryClient.invalidateQueries({ queryKey: ['users'] });
       toast.success(`${roleDisplayName} disabled successfully!`);
     },
     onError: (err: any) => {
@@ -92,7 +92,7 @@ export function UserManagementTable({ role, roleDisplayName, initialUsers = [], 
     setNewStaffUser('');
     setNewStaffName('');
     setNewStaffEmail('');
-    setNewStaffPass('123');
+    setNewStaffPass('onus123');
   };
 
   const handleRegisterSubmit = (e: React.FormEvent) => {
@@ -101,18 +101,22 @@ export function UserManagementTable({ role, roleDisplayName, initialUsers = [], 
       toast.error('Please fill all required fields.');
       return;
     }
+    
+    // Map representative to sales_representative role format in database
+    const backendRole = role === 'REPRESENTATIVE' ? 'SALES_REPRESENTATIVE' : role;
+
     registerMutation.mutate({
-      username: newStaffUser.toLowerCase(),
+      name: newStaffName,
       email: newStaffEmail,
-      fullName: newStaffName,
+      phone: newStaffUser.trim(),
       password: newStaffPass,
-      role: role
+      role: backendRole
     });
   };
 
   const openEditModal = (user: any) => {
     setEditingUser(user);
-    setEditName(user.fullName);
+    setEditName(user.fullName || user.name || '');
     setEditEmail(user.email);
     setEditPass(''); // Leave blank unless they want to change it
     setIsEditModalOpen(true);
@@ -121,7 +125,7 @@ export function UserManagementTable({ role, roleDisplayName, initialUsers = [], 
   const handleEditSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const payload: any = {
-      fullName: editName,
+      name: editName,
       email: editEmail,
     };
     if (editPass) {
@@ -131,7 +135,7 @@ export function UserManagementTable({ role, roleDisplayName, initialUsers = [], 
   };
 
   const handleDisable = (user: any) => {
-    if (confirm(`Are you sure you want to disable ${user.fullName}?`)) {
+    if (confirm(`Are you sure you want to disable ${user.fullName || user.name}?`)) {
       disableMutation.mutate(user.id || user._id);
     }
   };
@@ -154,9 +158,22 @@ export function UserManagementTable({ role, roleDisplayName, initialUsers = [], 
         <div className="flex flex-col gap-4">
           {activeUsers.map((user: any) => (
             <div key={user.id || user._id} className="p-4 rounded-lg border border-[#E2E8F0] bg-white flex flex-col sm:flex-row justify-between items-start sm:items-center shadow-sm hover:shadow-md transition gap-4">
-              <div>
-                <p className="font-bold text-[#0F172A]">{user.fullName}</p>
-                <p className="text-xs text-slate-500">📧 {user.email} • Username: {user.username}</p>
+              <div className="flex items-center gap-3">
+                <div className={`h-10 w-10 rounded-full font-bold flex items-center justify-center text-sm shrink-0 border ${
+                  user.isActive !== false
+                    ? role === 'SITE_INCHARGE' 
+                      ? 'bg-purple-50 text-purple-600 border-purple-100'
+                      : role === 'LOADING_STAFF'
+                        ? 'bg-blue-50 text-blue-600 border-blue-100'
+                        : 'bg-teal-50 text-teal-600 border-teal-100'
+                    : 'bg-slate-100 text-slate-400 border-slate-200'
+                }`}>
+                  {((user.fullName || user.name || 'U').charAt(0)).toUpperCase()}
+                </div>
+                <div>
+                  <p className="font-bold text-[#0F172A]">{user.fullName || user.name}</p>
+                  <p className="text-xs text-slate-500">📧 {user.email} • Phone/ID: {user.username || user.phone}</p>
+                </div>
               </div>
               
               <div className="flex items-center gap-6">

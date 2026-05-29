@@ -205,7 +205,7 @@ export default function PastEventsPage() {
   };
 
   return (
-    <AuthGuard allowedRoles={['ADMIN', 'SALES_REPRESENTATIVE', 'REPRESENTATIVE']}>
+    <AuthGuard>
       <main className="min-h-screen bg-slate-50 text-slate-900 pb-12 font-sans antialiased">
         
         {/* Top Header Panel */}
